@@ -50,9 +50,9 @@ defmodule RoutingExamplesWeb.RoutingSlipLive do
           </p>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <%!-- Left Column: Node Management --%>
-          <div class="space-y-6">
+        <div class="flex flex-col gap-6 max-w-2xl mx-auto">
+          <%!-- Node Management --%>
+          <div class="space-y-6 w-full">
             <%!-- Create Node Form --%>
             <div class="card bg-base-200 shadow-xl">
               <div class="card-body">
@@ -94,7 +94,7 @@ defmodule RoutingExamplesWeb.RoutingSlipLive do
                     <p class="text-sm">Create some nodes to get started</p>
                   </div>
                 <% else %>
-                  <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div class="flex flex-wrap gap-3">
                     <%= for node <- @nodes do %>
                       <.node_card
                         name={node}
@@ -108,8 +108,8 @@ defmodule RoutingExamplesWeb.RoutingSlipLive do
             </div>
           </div>
 
-          <%!-- Right Column: Message Creation & Visualization --%>
-          <div class="space-y-6">
+          <%!-- Message Creation & Visualization --%>
+          <div class="space-y-6 w-full">
             <%!-- Create Message Form --%>
             <div class="card bg-base-200 shadow-xl">
               <div class="card-body">
@@ -253,19 +253,15 @@ defmodule RoutingExamplesWeb.RoutingSlipLive do
       "card bg-base-300 transition-all duration-300",
       @active? && "ring-2 ring-primary ring-offset-2 ring-offset-base-200 scale-105"
     ]}>
-      <div class="card-body p-4">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <div class={[
-              "w-2 h-2 rounded-full",
-              if(@active?, do: "bg-success animate-pulse", else: "bg-base-content/30")
-            ]} />
-            <span class="font-mono text-sm font-medium">{@name}</span>
-          </div>
-          <%= if @visit_count > 0 do %>
-            <span class="badge badge-accent badge-sm font-mono">{@visit_count}</span>
-          <% end %>
-        </div>
+      <div class="card-body p-3 flex-row items-center gap-3">
+        <div class={[
+          "w-2 h-2 rounded-full shrink-0",
+          if(@active?, do: "bg-success animate-pulse", else: "bg-base-content/30")
+        ]} />
+        <span class="font-mono text-sm font-medium whitespace-nowrap">{@name}</span>
+        <%= if @visit_count > 0 do %>
+          <span class="badge badge-accent badge-sm font-mono ml-auto">{@visit_count}</span>
+        <% end %>
       </div>
     </div>
     """

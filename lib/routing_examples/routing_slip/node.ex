@@ -54,7 +54,6 @@ defmodule RoutingExamples.RoutingSlip.Node do
   @impl true
   def handle_cast({:process_message, message}, state) do
     %{routing_slip: routing_slip, visited: visited, payload: payload, id: message_id} = message
-
     # Add ourselves to visited with the current step number
     step_number = length(visited) + 1
     new_visited = visited ++ [{state.name, step_number, DateTime.utc_now()}]
