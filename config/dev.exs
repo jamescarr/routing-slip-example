@@ -1,4 +1,5 @@
 import Config
+config :ash, policies: [show_policy_breakdowns?: true]
 
 # Configure your database
 config :routing_examples, RoutingExamples.Repo,
@@ -68,7 +69,9 @@ config :routing_examples, RoutingExamplesWeb.Endpoint,
   ]
 
 # Enable dev routes for dashboard and mailbox
-config :routing_examples, dev_routes: true
+config :routing_examples,
+  dev_routes: true,
+  token_signing_secret: "KVFnZyYrlRJz2G/dOhwBi7MW0+ZpLoiz"
 
 # Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"

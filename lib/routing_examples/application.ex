@@ -12,10 +12,11 @@ defmodule RoutingExamples.Application do
       RoutingExamples.Repo,
       {DNSCluster, query: Application.get_env(:routing_examples, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: RoutingExamples.PubSub},
-      # Start a worker by calling: RoutingExamples.Worker.start_link(arg)
-      # {RoutingExamples.Worker, arg},
+      # Routing Slip pattern components
+      RoutingExamples.RoutingSlip.Supervisor,
       # Start to serve requests, typically the last entry
-      RoutingExamplesWeb.Endpoint
+      RoutingExamplesWeb.Endpoint,
+      {AshAuthentication.Supervisor, [otp_app: :routing_examples]}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

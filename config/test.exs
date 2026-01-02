@@ -1,4 +1,7 @@
 import Config
+config :routing_examples, token_signing_secret: "d/7Cs+IrWh6h6bB/QpnICgx7F55pHy00"
+config :bcrypt_elixir, log_rounds: 1
+config :ash, policies: [show_policy_breakdowns?: true], disable_async?: true
 
 # Configure your database
 #
