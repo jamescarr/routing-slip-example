@@ -10,13 +10,12 @@ defmodule RoutingExamplesWeb.RoutingSlipLive do
   use RoutingExamplesWeb, :live_view
 
   alias RoutingExamples.RoutingSlip
-
-  @pubsub_topic "routing_slip:updates"
+  alias RoutingExamples.RoutingSlip.Messenger
 
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
-      Phoenix.PubSub.subscribe(RoutingExamples.PubSub, @pubsub_topic)
+      Messenger.subscribe()
     end
 
     nodes = RoutingSlip.list_nodes()

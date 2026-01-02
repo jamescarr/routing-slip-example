@@ -1,20 +1,21 @@
 defmodule RoutingExamples.RoutingSlip.Node do
   @moduledoc """
-  A GenServer that represents a node in the routing slip pattern.
+  GenServer-based processing node for the PubSub Messenger implementation.
+
+  This is an internal module used by `Messenger.PubSub`. For creating nodes,
+  use `RoutingExamples.RoutingSlip.create_node/1` instead.
 
   Each node:
   - Receives messages with a routing slip
   - Adds itself to the "visited" list
   - Pops itself from the routing slip
   - Forwards to the next destination (if any)
-  - Broadcasts updates via PubSub for real-time UI updates
+  - Broadcasts updates via the configured Messenger for real-time UI updates
   """
   use GenServer
 
-  alias Phoenix.PubSub
+  alias RoutingExamples.RoutingSlip.Messenger
 
-  @pubsub RoutingExamples.PubSub
-  @topic "routing_slip:updates"
   @forward_delay_ms 500
 
   # Client API
@@ -46,7 +47,7 @@ defmodule RoutingExamples.RoutingSlip.Node do
     }
 
     # Broadcast that this node was created
-    PubSub.broadcast(@pubsub, @topic, {:node_created, name})
+    Messenger.broadcast({:node_created, name})
 
     {:ok, state}
   end
@@ -71,7 +72,7 @@ defmodule RoutingExamples.RoutingSlip.Node do
     new_state = %{state | messages_processed: state.messages_processed + 1}
 
     # Broadcast that we processed this message
-    PubSub.broadcast(@pubsub, @topic, {:message_processed, state.name, updated_message})
+    Messenger.broadcast({:message_processed, state.name, updated_message})
 
     # Forward to next destination if there is one
     case remaining_slip do
@@ -81,7 +82,7 @@ defmodule RoutingExamples.RoutingSlip.Node do
 
       [] ->
         # Message completed its journey
-        PubSub.broadcast(@pubsub, @topic, {:message_completed, updated_message})
+        Messenger.broadcast({:message_completed, updated_message})
     end
 
     {:noreply, new_state}
