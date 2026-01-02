@@ -93,3 +93,22 @@ config :phoenix_live_view,
 
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
+
+# =============================================================================
+# RabbitMQ Messenger Configuration
+# =============================================================================
+# Requires RabbitMQ running: docker-compose up -d
+# Comment out to use PubSub (GenServer-based) instead.
+config :routing_examples, :routing_slip_messenger,
+  RoutingExamples.RoutingSlip.Messenger.RabbitMQ
+
+config :routing_examples, RoutingExamples.RoutingSlip.Messenger.RabbitMQ,
+  connection: [
+    host: "localhost",
+    port: 5672,
+    username: "guest",
+    password: "guest",
+    virtual_host: "/"
+  ],
+  messages_exchange: "routing_slip.messages",
+  events_exchange: "routing_slip.events"

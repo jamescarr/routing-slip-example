@@ -76,7 +76,11 @@ defmodule RoutingExamples.MixProject do
       {:gettext, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
-      {:bandit, "~> 1.5"}
+      {:bandit, "~> 1.5"},
+      # RabbitMQ messaging (amqp 4.x required for OTP 28+)
+      {:amqp, "~> 4.1"},
+      {:broadway, "~> 1.2"},
+      {:broadway_rabbitmq, "~> 0.8"}
     ]
   end
 
