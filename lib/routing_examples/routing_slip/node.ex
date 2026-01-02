@@ -15,6 +15,7 @@ defmodule RoutingExamples.RoutingSlip.Node do
 
   @pubsub RoutingExamples.PubSub
   @topic "routing_slip:updates"
+  @forward_delay_ms 500
 
   # Client API
 
@@ -77,7 +78,7 @@ defmodule RoutingExamples.RoutingSlip.Node do
     case remaining_slip do
       [next_destination | _rest] ->
         # Small delay for visualization effect
-        Process.send_after(self(), {:forward_message, next_destination, updated_message}, 300)
+        Process.send_after(self(), {:forward_message, next_destination, updated_message}, @forward_delay_ms)
 
       [] ->
         # Message completed its journey
