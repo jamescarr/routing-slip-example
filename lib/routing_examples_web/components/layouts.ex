@@ -66,7 +66,7 @@ defmodule RoutingExamplesWeb.Layouts do
 
     <main class={[
       "px-4 py-10 sm:px-6 lg:px-8",
-      !@full_width && "max-w-2xl mx-auto"
+      "max-w-7xl mx-auto"
     ]}>
       {render_slot(@inner_block)}
     </main>
