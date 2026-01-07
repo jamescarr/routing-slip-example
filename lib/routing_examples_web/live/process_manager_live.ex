@@ -111,21 +111,26 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
   attr :instance, :any, required: true
 
   defp process_flow_diagram(assigns) do
-    steps = assigns.definition.steps
     current_step = if assigns.instance, do: assigns.instance.current_step, else: nil
     intermediate_results = if assigns.instance, do: assigns.instance.intermediate_results, else: %{}
-    parallel_tasks = if assigns.instance, do: get_parallel_tasks(assigns.instance), else: %{}
+    context = if assigns.instance, do: assigns.instance.context, else: %{}
+    has_shared_assets = Map.get(context, :has_shared_assets, false)
 
-    # Check if we should show expanded scatter/gather for gathering or purging
-    show_scatter_gather = current_step in [:gathering, :purging] and map_size(parallel_tasks) > 0
+    # Get data sources from context to know what parallel tasks exist
+    data_sources = Map.get(context, :data_sources, [:profile, :documents, :preferences])
+
+    # Get the actual task statuses from intermediate_results (nested in "gathering" and "purging")
+    gather_results = get_nested_task_results(intermediate_results, "gathering")
+    purge_results = get_nested_task_results(intermediate_results, "purging")
+
+    # Generate Mermaid diagram definition
+    mermaid_def = generate_mermaid_diagram(current_step, intermediate_results, data_sources, gather_results, purge_results, has_shared_assets)
 
     assigns =
       assigns
-      |> assign(:steps, steps)
       |> assign(:current_step, current_step)
       |> assign(:intermediate_results, intermediate_results)
-      |> assign(:parallel_tasks, parallel_tasks)
-      |> assign(:show_scatter_gather, show_scatter_gather)
+      |> assign(:mermaid_def, mermaid_def)
 
     ~H"""
     <div class="card bg-base-200 shadow-xl">
@@ -134,50 +139,75 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
           <.icon name="hero-map" class="size-5" /> Process Flow
         </h2>
 
-        <%!-- Step Flow Visualization --%>
-        <div class="flex flex-wrap items-center justify-center gap-2">
-          <%= for {step, idx} <- Enum.with_index(@steps) do %>
-            <%= if @show_scatter_gather && step.id == @current_step do %>
-              <%!-- Expanded scatter/gather visualization --%>
-              <.scatter_gather_flow_node
-                step={step}
-                tasks={@parallel_tasks}
-                status={get_step_status(step.id, @current_step, @intermediate_results)}
-              />
-            <% else %>
-              <.step_node
-                step={step}
-                status={get_step_status(step.id, @current_step, @intermediate_results)}
-                is_current={step.id == @current_step}
-              />
-            <% end %>
-            <%= if idx < length(@steps) - 1 do %>
-              <.step_arrow
-                from={step.id}
-                to={Enum.at(@steps, idx + 1).id}
-                active={step_completed?(step.id, @intermediate_results)}
-              />
-            <% end %>
-          <% end %>
+        <%!-- Mermaid.js Flowchart --%>
+        <div
+          id="mermaid-diagram"
+          phx-hook=".MermaidDiagram"
+          phx-update="ignore"
+          data-diagram={@mermaid_def}
+          class="flex justify-center overflow-x-auto py-4"
+        >
+          <div class="text-center text-base-content/50">
+            <span class="loading loading-dots loading-md"></span>
+            <p class="text-sm mt-2">Loading diagram...</p>
+          </div>
         </div>
 
+        <%!-- Colocated JS Hook for Mermaid --%>
+        <script :type={Phoenix.LiveView.ColocatedHook} name=".MermaidDiagram">
+          export default {
+            mounted() {
+              this.renderDiagram();
+            },
+            updated() {
+              // Re-render when data changes
+              this.renderDiagram();
+            },
+            renderDiagram() {
+              const diagramDef = this.el.dataset.diagram;
+              if (!diagramDef || !window.mermaid) {
+                // Retry after a short delay if mermaid isn't loaded yet
+                setTimeout(() => this.renderDiagram(), 100);
+                return;
+              }
+
+              // Generate unique ID for this render
+              const id = `mermaid-${Date.now()}`;
+
+              window.mermaid.render(id, diagramDef).then(({svg}) => {
+                this.el.innerHTML = svg;
+
+                // Add click handlers for interactivity if needed
+                const svgEl = this.el.querySelector('svg');
+                if (svgEl) {
+                  svgEl.style.maxWidth = '100%';
+                  svgEl.style.height = 'auto';
+                }
+              }).catch(err => {
+                console.error('Mermaid render error:', err);
+                this.el.innerHTML = `<pre class="text-error text-xs">${err.message}</pre>`;
+              });
+            }
+          }
+        </script>
+
         <%!-- Legend --%>
-        <div class="flex items-center justify-center gap-6 mt-6 text-sm text-base-content/60">
+        <div class="flex flex-wrap items-center justify-center gap-4 mt-4 text-sm text-base-content/60">
           <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded-full bg-success"></div>
+            <div class="w-3 h-3 rounded bg-emerald-500"></div>
             <span>Completed</span>
           </div>
           <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded-full bg-warning animate-pulse"></div>
+            <div class="w-3 h-3 rounded bg-amber-500 animate-pulse"></div>
             <span>In Progress</span>
           </div>
           <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded-full bg-base-content/30"></div>
+            <div class="w-3 h-3 rounded bg-slate-500"></div>
             <span>Pending</span>
           </div>
           <div class="flex items-center gap-2">
-            <.icon name="hero-arrows-pointing-out" class="size-3 text-info" />
-            <span>Scatter/Gather</span>
+            <div class="w-3 h-3 rounded bg-cyan-500"></div>
+            <span>Parallel Tasks</span>
           </div>
         </div>
       </div>
@@ -185,204 +215,112 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
     """
   end
 
-  attr :step, :map, required: true
-  attr :tasks, :map, required: true
-  attr :status, :atom, required: true
-
-  defp scatter_gather_flow_node(assigns) do
-    tasks_list = Enum.sort_by(assigns.tasks, fn {k, _v} -> k end)
-    completed_count = Enum.count(tasks_list, fn {_k, v} -> Map.get(v, :status) == :completed end)
-    total_count = length(tasks_list)
-
-    assigns =
-      assigns
-      |> assign(:tasks_list, tasks_list)
-      |> assign(:completed_count, completed_count)
-      |> assign(:total_count, total_count)
-
-    ~H"""
-    <div class="flex flex-col items-center ring-2 ring-info/50 ring-offset-2 ring-offset-base-200 rounded-xl p-3 bg-info/5">
-      <%!-- Header with scatter icon --%>
-      <div class="flex items-center gap-2 mb-3">
-        <.icon name="hero-arrows-pointing-out" class="size-4 text-info animate-pulse" />
-        <span class="text-xs font-bold text-info">{@step.name} (Parallel)</span>
-        <span class="badge badge-info badge-xs">{@completed_count}/{@total_count}</span>
-      </div>
-
-      <%!-- Fan-out visualization --%>
-      <div class="relative w-full">
-        <%!-- Scatter point --%>
-        <div class="flex justify-center mb-2">
-          <div class="w-8 h-8 rounded-full bg-info/30 flex items-center justify-center border-2 border-info">
-            <.icon name="hero-bolt" class="size-4 text-info" />
-          </div>
-        </div>
-
-        <%!-- Fan-out lines (SVG) --%>
-        <svg class="w-full h-6 overflow-visible" preserveAspectRatio="none">
-          <%= for {_task, idx} <- Enum.with_index(@tasks_list) do %>
-            <%
-              # Calculate x position for each task (distribute evenly)
-              task_count = length(@tasks_list)
-              spacing = 100 / (task_count + 1)
-              x_pos = spacing * (idx + 1)
-            %>
-            <line
-              x1="50%"
-              y1="0"
-              x2={"#{x_pos}%"}
-              y2="100%"
-              stroke="currentColor"
-              stroke-width="2"
-              class="text-info/50"
-            />
-          <% end %>
-        </svg>
-
-        <%!-- Parallel task nodes --%>
-        <div class="flex flex-wrap justify-center gap-2 mt-1">
-          <%= for {task_id, task_data} <- @tasks_list do %>
-            <.mini_task_node task_id={task_id} data={task_data} />
-          <% end %>
-        </div>
-
-        <%!-- Fan-in lines (SVG) --%>
-        <svg class="w-full h-6 overflow-visible" preserveAspectRatio="none">
-          <%= for {_task, idx} <- Enum.with_index(@tasks_list) do %>
-            <%
-              task_count = length(@tasks_list)
-              spacing = 100 / (task_count + 1)
-              x_pos = spacing * (idx + 1)
-            %>
-            <line
-              x1={"#{x_pos}%"}
-              y1="0"
-              x2="50%"
-              y2="100%"
-              stroke="currentColor"
-              stroke-width="2"
-              class="text-info/50"
-            />
-          <% end %>
-        </svg>
-
-        <%!-- Gather point --%>
-        <div class="flex justify-center mt-2">
-          <div class={[
-            "w-8 h-8 rounded-full flex items-center justify-center border-2",
-            if(@completed_count == @total_count,
-              do: "bg-success/30 border-success",
-              else: "bg-warning/30 border-warning"
-            )
-          ]}>
-            <%= if @completed_count == @total_count do %>
-              <.icon name="hero-check" class="size-4 text-success" />
-            <% else %>
-              <div class="w-4 h-4 rounded-full border-2 border-warning border-t-transparent animate-spin"></div>
-            <% end %>
-          </div>
-        </div>
-      </div>
-
-      <%!-- Progress indicator --%>
-      <div class="w-full mt-3">
-        <progress
-          class={[
-            "progress w-full h-2",
-            if(@completed_count == @total_count, do: "progress-success", else: "progress-warning")
-          ]}
-          value={@completed_count}
-          max={@total_count}
-        />
-      </div>
-    </div>
-    """
+  # Extract nested task results from intermediate_results
+  # The gather/purge steps store their results under "gathering"/"purging" -> :data -> "gather:xxx"
+  defp get_nested_task_results(intermediate_results, step_key) do
+    case Map.get(intermediate_results, step_key) do
+      %{data: data} when is_map(data) -> data
+      _ -> %{}
+    end
   end
 
-  attr :task_id, :string, required: true
-  attr :data, :map, required: true
+  # Generate Mermaid diagram definition based on process state
+  # Always shows scatter/gather structure for gathering and purging steps
+  defp generate_mermaid_diagram(current_step, intermediate_results, data_sources, gather_results, purge_results, has_shared_assets) do
+    # Define step statuses
+    steps = [:init, :gathering, :transferring, :packaging, :uploading, :notifying, :purging, :completed]
 
-  defp mini_task_node(assigns) do
-    status = Map.get(assigns.data, :status, :pending)
-    assigns = assign(assigns, :status, status)
+    step_classes =
+      steps
+      |> Enum.map(fn step ->
+        status = get_step_status(step, current_step, intermediate_results)
+        class_name = case status do
+          :completed -> "completed"
+          :in_progress -> "active"
+          _ -> "pending"
+        end
+        {step, class_name}
+      end)
+      |> Map.new()
 
-    ~H"""
-    <div class={[
-      "flex flex-col items-center p-2 rounded-lg border min-w-[60px] transition-all duration-300",
-      mini_task_border_class(@status)
-    ]}>
-      <div class={[
-        "w-6 h-6 rounded-full flex items-center justify-center mb-1",
-        mini_task_bg_class(@status)
-      ]}>
-        <%= case @status do %>
-          <% :completed -> %>
-            <.icon name="hero-check" class="size-3 text-success" />
-          <% :in_progress -> %>
-            <div class="w-3 h-3 rounded-full border-2 border-warning border-t-transparent animate-spin"></div>
-          <% _ -> %>
-            <.icon name="hero-clock" class="size-3 text-base-content/40" />
-        <% end %>
-      </div>
-      <span class="text-[10px] font-medium text-center leading-tight truncate max-w-[50px]" title={@task_id}>
-        {format_task_name(@task_id)}
-      </span>
-    </div>
+    # Build gather tasks from data_sources - ALWAYS show them to illustrate parallel nature
+    gather_tasks =
+      data_sources
+      |> Enum.map(fn source ->
+        source_str = Atom.to_string(source)
+        task_key = "gather:#{source_str}"
+        task_result = Map.get(gather_results, task_key, %{})
+        task_status = Map.get(task_result, :status, :pending)
+
+        # Determine class based on step and task status
+        class = cond do
+          task_status == :completed -> "taskComplete"
+          current_step == :gathering -> "taskActive"
+          step_classes[:gathering] == "completed" -> "taskComplete"
+          true -> "taskPending"
+        end
+
+        {source_str |> String.replace("_", " ") |> String.split() |> Enum.map(&String.capitalize/1) |> Enum.join(" "), class, source_str}
+      end)
+
+    # Build purge tasks - same data sources
+    purge_tasks =
+      data_sources
+      |> Enum.map(fn source ->
+        source_str = Atom.to_string(source)
+        task_key = "purge:#{source_str}"
+        task_result = Map.get(purge_results, task_key, %{})
+        task_status = Map.get(task_result, :status, :pending)
+
+        class = cond do
+          task_status == :completed -> "taskComplete"
+          current_step == :purging -> "taskActive"
+          step_classes[:purging] == "completed" -> "taskComplete"
+          true -> "taskPending"
+        end
+
+        {source_str |> String.replace("_", " ") |> String.split() |> Enum.map(&String.capitalize/1) |> Enum.join(" "), class, source_str}
+      end)
+
+    # Determine gather section class (for the scatter/gather diamonds)
+    gather_section_class = step_classes[:gathering]
+    purge_section_class = step_classes[:purging]
+
+    # Build the Mermaid diagram - ALWAYS show scatter/gather structure
     """
-  end
+    flowchart TB
+      classDef completed fill:#10b981,stroke:#059669,color:#fff,stroke-width:2px
+      classDef active fill:#f59e0b,stroke:#d97706,color:#fff,stroke-width:3px
+      classDef pending fill:#475569,stroke:#64748b,color:#94a3b8,stroke-width:1px
+      classDef taskComplete fill:#2dd4bf,stroke:#14b8a6,color:#0d3d3d,stroke-width:2px
+      classDef taskActive fill:#fbbf24,stroke:#f59e0b,color:#78350f,stroke-width:2px
+      classDef taskPending fill:#64748b,stroke:#475569,color:#e2e8f0,stroke-width:1px
 
-  attr :step, :map, required: true
-  attr :status, :atom, required: true
-  attr :is_current, :boolean, required: true
+      INIT[["🚀 Initialize"]]:::#{step_classes[:init]}
 
-  defp step_node(assigns) do
-    ~H"""
-    <div class={[
-      "flex flex-col items-center p-3 rounded-lg border-2 min-w-[100px] transition-all duration-300",
-      step_border_class(@status),
-      @is_current && "ring-2 ring-offset-2 ring-offset-base-200 ring-warning scale-105"
-    ]}>
-      <div class={[
-        "p-2 rounded-lg mb-2",
-        step_bg_class(@status)
-      ]}>
-        <.icon name={@step.icon} class="size-5" />
-      </div>
-      <span class="text-xs font-medium text-center">{@step.name}</span>
-      <.status_indicator status={@status} />
-    </div>
-    """
-  end
+      %% Gathering Phase - Scatter/Gather
+      INIT --> SCATTER_G{{"⚡ Scatter"}}:::#{gather_section_class}
+      #{Enum.map_join(gather_tasks, "\n    ", fn {name, class, id} -> "SCATTER_G --> G_#{String.upcase(id)}[\"#{name}\"]:::#{class}" end)}
+      #{Enum.map_join(gather_tasks, "\n    ", fn {_name, _class, id} -> "G_#{String.upcase(id)} --> GATHER_G" end)}
+      GATHER_G{{"🔄 Gather"}}:::#{gather_section_class}
 
-  attr :status, :atom, required: true
+    #{if has_shared_assets do
+      """
+        GATHER_G --> TRANSFER[\"🔄 Transfer Assets\"]:::#{step_classes[:transferring]}
+        TRANSFER --> PACKAGE[\"📦 Package\"]:::#{step_classes[:packaging]}
+      """
+    else
+      "  GATHER_G --> PACKAGE[\"📦 Package\"]:::#{step_classes[:packaging]}"
+    end}
+      PACKAGE --> UPLOAD[\"☁️ Upload\"]:::#{step_classes[:uploading]}
+      UPLOAD --> NOTIFY[\"📧 Notify\"]:::#{step_classes[:notifying]}
 
-  defp status_indicator(assigns) do
-    ~H"""
-    <div class="mt-1">
-      <%= case @status do %>
-        <% :completed -> %>
-          <.icon name="hero-check-circle" class="size-4 text-success" />
-        <% :in_progress -> %>
-          <div class="w-4 h-4 rounded-full border-2 border-warning border-t-transparent animate-spin"></div>
-        <% _ -> %>
-          <div class="w-4 h-4 rounded-full border-2 border-base-content/30"></div>
-      <% end %>
-    </div>
-    """
-  end
-
-  attr :from, :atom, required: true
-  attr :to, :atom, required: true
-  attr :active, :boolean, required: true
-
-  defp step_arrow(assigns) do
-    ~H"""
-    <div class={[
-      "hidden sm:block",
-      if(@active, do: "text-success", else: "text-base-content/30")
-    ]}>
-      <.icon name="hero-arrow-right" class="size-5" />
-    </div>
+      %% Purging Phase - Scatter/Gather
+      NOTIFY --> SCATTER_P{{"⚡ Scatter"}}:::#{purge_section_class}
+      #{Enum.map_join(purge_tasks, "\n    ", fn {name, class, id} -> "SCATTER_P --> P_#{String.upcase(id)}[\"#{name}\"]:::#{class}" end)}
+      #{Enum.map_join(purge_tasks, "\n    ", fn {_name, _class, id} -> "P_#{String.upcase(id)} --> GATHER_P" end)}
+      GATHER_P{{"🔄 Gather"}}:::#{purge_section_class}
+      GATHER_P --> DONE[["✅ Completed"]]:::#{step_classes[:completed]}
     """
   end
 
@@ -734,18 +672,6 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
     stream_insert(socket, :message_history, msg, at: 0)
   end
 
-  defp get_parallel_tasks(%Instance{current_step: step, intermediate_results: results}) do
-    prefix = "#{step_prefix(step)}:"
-
-    results
-    |> Enum.filter(fn {key, _value} -> String.starts_with?(key, prefix) end)
-    |> Enum.into(%{})
-  end
-
-  defp step_prefix(:gathering), do: "gather"
-  defp step_prefix(:purging), do: "purge"
-  defp step_prefix(step), do: Atom.to_string(step)
-
   defp get_step_status(step_id, current_step, intermediate_results) do
     cond do
       # If current step is :completed, the completed step should show as completed, not in_progress
@@ -765,22 +691,6 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
       _ -> false
     end
   end
-
-  defp step_border_class(:completed), do: "border-success bg-success/10"
-  defp step_border_class(:in_progress), do: "border-warning bg-warning/10"
-  defp step_border_class(_), do: "border-base-content/20"
-
-  defp step_bg_class(:completed), do: "bg-success/20 text-success"
-  defp step_bg_class(:in_progress), do: "bg-warning/20 text-warning"
-  defp step_bg_class(_), do: "bg-base-content/10 text-base-content/50"
-
-  defp mini_task_border_class(:completed), do: "border-success bg-success/10"
-  defp mini_task_border_class(:in_progress), do: "border-warning bg-warning/10 animate-pulse"
-  defp mini_task_border_class(_), do: "border-base-content/20 bg-base-100"
-
-  defp mini_task_bg_class(:completed), do: "bg-success/30"
-  defp mini_task_bg_class(:in_progress), do: "bg-warning/30"
-  defp mini_task_bg_class(_), do: "bg-base-content/10"
 
   defp message_type_class(:success), do: "text-success"
   defp message_type_class(:error), do: "text-error"
