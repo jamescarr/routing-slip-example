@@ -22,6 +22,9 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
       Messenger.subscribe()
     end
 
+    # Get initial scenario data
+    initial_scenario = TestScenarios.get_scenario("scenario_1")
+
     socket =
       socket
       |> assign(:current_process, nil)
@@ -29,6 +32,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
       |> assign(:test_scenarios, TestScenarios.list_scenarios())
       |> assign(:scenario_form, to_form(%{"scenario_id" => "scenario_1"}))
       |> assign(:selected_scenario, "scenario_1")
+      |> assign(:selected_scenario_data, initial_scenario)
       |> stream(:message_history, [])
 
     {:ok, socket}
@@ -54,6 +58,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
           <.process_flow_diagram
             definition={@definition}
             instance={@current_process}
+            selected_scenario={@selected_scenario_data}
           />
 
           <%!-- Download Link (when available) - full width --%>
@@ -109,11 +114,20 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
 
   attr :definition, :map, required: true
   attr :instance, :any, required: true
+  attr :selected_scenario, :map, default: nil
 
   defp process_flow_diagram(assigns) do
     current_step = if assigns.instance, do: assigns.instance.current_step, else: nil
     intermediate_results = if assigns.instance, do: assigns.instance.intermediate_results, else: %{}
-    context = if assigns.instance, do: assigns.instance.context, else: %{}
+
+    # Use instance context if running, otherwise fall back to selected scenario
+    context =
+      cond do
+        assigns.instance -> assigns.instance.context
+        assigns.selected_scenario -> assigns.selected_scenario.user
+        true -> %{}
+      end
+
     has_shared_assets = Map.get(context, :has_shared_assets, false)
 
     # Get data sources from context to know what parallel tasks exist
@@ -139,13 +153,13 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
           <.icon name="hero-map" class="size-5" /> Process Flow
         </h2>
 
-        <%!-- Mermaid.js Flowchart --%>
+        <%!-- Mermaid.js Flowchart - phx-update="ignore" keeps DOM stable, hook handles updates --%>
         <div
           id="mermaid-diagram"
           phx-hook=".MermaidDiagram"
           phx-update="ignore"
           data-diagram={@mermaid_def}
-          class="flex justify-center overflow-x-auto py-4"
+          class="flex justify-center overflow-x-auto py-4 min-h-[500px]"
         >
           <div class="text-center text-base-content/50">
             <span class="loading loading-dots loading-md"></span>
@@ -153,14 +167,20 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
           </div>
         </div>
 
-        <%!-- Colocated JS Hook for Mermaid with animations --%>
+        <%!-- Colocated JS Hook for Mermaid - uses pushEvent for updates --%>
         <script :type={Phoenix.LiveView.ColocatedHook} name=".MermaidDiagram">
           export default {
             mounted() {
+              this.lastDiagram = null;
               this.renderDiagram();
-            },
-            updated() {
-              this.renderDiagram();
+
+              // Listen for diagram updates from LiveView
+              this.handleEvent("update_diagram", ({diagram}) => {
+                if (diagram !== this.lastDiagram) {
+                  this.el.dataset.diagram = diagram;
+                  this.renderDiagram();
+                }
+              });
             },
             renderDiagram() {
               const diagramDef = this.el.dataset.diagram;
@@ -168,6 +188,10 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
                 setTimeout(() => this.renderDiagram(), 100);
                 return;
               }
+
+              // Skip if same diagram
+              if (diagramDef === this.lastDiagram) return;
+              this.lastDiagram = diagramDef;
 
               const id = `mermaid-${Date.now()}`;
 
@@ -178,47 +202,29 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
                 if (svgEl) {
                   svgEl.style.maxWidth = '100%';
                   svgEl.style.height = 'auto';
-                  svgEl.style.minHeight = '400px';
+                  svgEl.style.minHeight = '450px';
 
-                  // Add pulsing animation to Process Manager node
-                  const pmNode = svgEl.querySelector('[id*="PM"]');
+                  // Add subtle glow animation to Process Manager node only
+                  const pmNode = svgEl.querySelector('[id*="flowchart-PM"]');
                   if (pmNode) {
-                    pmNode.style.animation = 'pulse 2s ease-in-out infinite';
+                    pmNode.classList.add('pm-glow');
                   }
+                }
 
-                  // Add flowing animation to active edges (thick orange ones)
-                  const edges = svgEl.querySelectorAll('.edge-pattern, path[stroke-width="3"]');
-                  edges.forEach(edge => {
-                    if (edge.getAttribute('stroke') === '#f59e0b' ||
-                        edge.style.stroke === 'rgb(245, 158, 11)') {
-                      edge.style.animation = 'flowPulse 1.5s ease-in-out infinite';
+                // Inject CSS animations if not already present
+                if (!document.getElementById('mermaid-animations')) {
+                  const style = document.createElement('style');
+                  style.id = 'mermaid-animations';
+                  style.textContent = `
+                    .pm-glow {
+                      animation: pmGlow 2s ease-in-out infinite;
                     }
-                  });
-
-                  // Inject CSS animations if not already present
-                  if (!document.getElementById('mermaid-animations')) {
-                    const style = document.createElement('style');
-                    style.id = 'mermaid-animations';
-                    style.textContent = `
-                      @keyframes pulse {
-                        0%, 100% { transform: scale(1); opacity: 1; }
-                        50% { transform: scale(1.05); opacity: 0.9; }
-                      }
-                      @keyframes flowPulse {
-                        0%, 100% { stroke-opacity: 1; stroke-width: 3px; }
-                        50% { stroke-opacity: 0.6; stroke-width: 4px; }
-                      }
-                      @keyframes messageFlow {
-                        0% { stroke-dashoffset: 20; }
-                        100% { stroke-dashoffset: 0; }
-                      }
-                      .mermaid path.edge-thickness-thick {
-                        stroke-dasharray: 5 5;
-                        animation: messageFlow 0.5s linear infinite;
-                      }
-                    `;
-                    document.head.appendChild(style);
-                  }
+                    @keyframes pmGlow {
+                      0%, 100% { filter: drop-shadow(0 0 3px #8b5cf6); }
+                      50% { filter: drop-shadow(0 0 8px #a855f7); }
+                    }
+                  `;
+                  document.head.appendChild(style);
                 }
               }).catch(err => {
                 console.error('Mermaid render error:', err);
@@ -605,8 +611,8 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
     assigns = assign(assigns, :status, status)
 
     ~H"""
-    <details class="collapse collapse-arrow bg-base-300 rounded-lg">
-      <summary class="collapse-title text-sm font-medium py-2 min-h-0">
+    <details class="group bg-base-300 rounded-lg">
+      <summary class="flex items-center justify-between cursor-pointer p-3 text-sm font-medium">
         <div class="flex items-center gap-2">
           <%= if @status == :completed do %>
             <.icon name="hero-check-circle" class="size-4 text-success" />
@@ -615,8 +621,9 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
           <% end %>
           <span>{@key}</span>
         </div>
+        <.icon name="hero-chevron-down" class="size-4 transition-transform group-open:rotate-180" />
       </summary>
-      <div class="collapse-content">
+      <div class="px-3 pb-3">
         <pre class="text-xs bg-base-100 p-2 rounded overflow-x-auto"><code>{inspect(@value, pretty: true, limit: 5)}</code></pre>
       </div>
     </details>
@@ -663,7 +670,19 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
 
   @impl true
   def handle_event("select_scenario", %{"scenario_id" => scenario_id}, socket) do
-    {:noreply, assign(socket, :selected_scenario, scenario_id)}
+    scenario_data = TestScenarios.get_scenario(scenario_id)
+
+    # Generate new diagram for this scenario
+    context = scenario_data.user
+    data_sources = Map.get(context, :data_sources, [:profile, :documents, :preferences])
+    has_shared_assets = Map.get(context, :has_shared_assets, false)
+    mermaid_def = generate_mermaid_diagram(nil, %{}, data_sources, %{}, %{}, has_shared_assets)
+
+    {:noreply,
+     socket
+     |> assign(:selected_scenario, scenario_id)
+     |> assign(:selected_scenario_data, scenario_data)
+     |> push_event("update_diagram", %{diagram: mermaid_def})}
   end
 
   def handle_event("start_process", %{"scenario_id" => scenario_id}, socket) do
@@ -693,13 +712,16 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
       socket
       |> assign(:current_process, instance)
       |> add_message(:started, "Process initialized")
+      |> push_diagram_update(instance)
 
     {:noreply, socket}
   end
 
   def handle_info({:step_started, correlation_id, step}, socket) do
     socket = maybe_update_process(socket, correlation_id, fn socket ->
-      add_message(socket, :info, "Step #{step} started")
+      socket
+      |> add_message(:info, "Step #{step} started")
+      |> push_diagram_update()
     end)
 
     {:noreply, socket}
@@ -710,6 +732,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
       socket
       |> update(:current_process, &ProcessManager.refresh_instance/1)
       |> add_message(:success, "Step #{step} completed ✓")
+      |> push_diagram_update()
     end)
 
     {:noreply, socket}
@@ -741,6 +764,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
       |> assign(:current_process, instance)
       |> add_message(:success, "🎉 Process completed!")
       |> put_flash(:info, "Offboarding completed successfully!")
+      |> push_diagram_update(instance)
 
     {:noreply, socket}
   end
@@ -793,6 +817,31 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
     }
 
     stream_insert(socket, :message_history, msg, at: 0)
+  end
+
+  # Push diagram update to client - uses current_process from socket
+  defp push_diagram_update(socket) do
+    case socket.assigns.current_process do
+      nil -> socket
+      instance -> push_diagram_update(socket, instance)
+    end
+  end
+
+  # Push diagram update with explicit instance
+  defp push_diagram_update(socket, instance) do
+    context = instance.context
+    current_step = instance.current_step
+    intermediate_results = instance.intermediate_results
+
+    data_sources = Map.get(context, :data_sources, [:profile, :documents, :preferences])
+    has_shared_assets = Map.get(context, :has_shared_assets, false)
+
+    gather_results = get_nested_task_results(intermediate_results, "gathering")
+    purge_results = get_nested_task_results(intermediate_results, "purging")
+
+    mermaid_def = generate_mermaid_diagram(current_step, intermediate_results, data_sources, gather_results, purge_results, has_shared_assets)
+
+    push_event(socket, "update_diagram", %{diagram: mermaid_def})
   end
 
   defp get_step_status(step_id, current_step, intermediate_results) do
