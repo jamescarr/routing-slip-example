@@ -112,3 +112,24 @@ config :routing_examples, RoutingExamples.RoutingSlip.Messenger.RabbitMQ,
   ],
   messages_exchange: "routing_slip.messages",
   events_exchange: "routing_slip.events"
+
+# =============================================================================
+# LocalStack S3 Configuration
+# =============================================================================
+# Requires LocalStack running: docker-compose up -d
+config :ex_aws,
+  access_key_id: "test",
+  secret_access_key: "test",
+  region: "us-east-1"
+
+config :ex_aws, :s3,
+  scheme: "http://",
+  host: "localhost",
+  port: 4566,
+  # Use path-style URLs for LocalStack
+  path_style: true
+
+config :routing_examples, :s3,
+  bucket: "gdpr-exports",
+  # Pre-signed URL expiry in seconds (7 days)
+  signed_url_expiry: 7 * 24 * 60 * 60

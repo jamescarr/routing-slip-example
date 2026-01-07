@@ -80,7 +80,12 @@ defmodule RoutingExamples.MixProject do
       # RabbitMQ messaging (amqp 4.x required for OTP 28+)
       {:amqp, "~> 4.1"},
       {:broadway, "~> 1.2"},
-      {:broadway_rabbitmq, "~> 0.8"}
+      {:broadway_rabbitmq, "~> 0.8"},
+      # AWS S3 for LocalStack
+      {:ex_aws, "~> 2.5"},
+      {:ex_aws_s3, "~> 2.5"},
+      {:sweet_xml, "~> 0.7"},
+      {:hackney, "~> 1.20"}
     ]
   end
 

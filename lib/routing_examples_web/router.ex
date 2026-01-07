@@ -43,6 +43,7 @@ defmodule RoutingExamplesWeb.Router do
 
     get "/", PageController, :home
     live "/routing-slip", RoutingSlipLive
+    live "/process-manager", ProcessManagerLive
     auth_routes AuthController, RoutingExamples.Accounts.User, path: "/auth"
     sign_out_route AuthController
 
@@ -81,10 +82,13 @@ defmodule RoutingExamplesWeb.Router do
     )
   end
 
-  # Other scopes may use custom stacks.
-  # scope "/api", RoutingExamplesWeb do
-  #   pipe_through :api
-  # end
+  # API scope for export downloads
+  scope "/api", RoutingExamplesWeb do
+    pipe_through :api
+
+    # Export download endpoint - proxies from S3 and tracks downloads
+    get "/exports/:correlation_id/download", ExportController, :download
+  end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:routing_examples, :dev_routes) do

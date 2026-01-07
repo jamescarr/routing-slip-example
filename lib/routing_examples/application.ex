@@ -14,6 +14,8 @@ defmodule RoutingExamples.Application do
       {Phoenix.PubSub, name: RoutingExamples.PubSub},
       # Routing Slip pattern components - start supervisor based on configured messenger
       routing_slip_supervisor(),
+      # Process Manager pattern components
+      RoutingExamples.ProcessManager.Supervisor,
       # Start to serve requests, typically the last entry
       RoutingExamplesWeb.Endpoint,
       {AshAuthentication.Supervisor, [otp_app: :routing_examples]}
