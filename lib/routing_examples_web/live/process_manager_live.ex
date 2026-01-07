@@ -37,10 +37,10 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} full_width>
       <div class="min-h-screen">
         <%!-- Header with EIP-style title --%>
-        <div class="text-center mb-8">
+        <div class="text-center mb-6">
           <h1 class="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
             Process Manager Pattern
           </h1>
@@ -49,7 +49,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
           </p>
         </div>
 
-        <div class="max-w-7xl mx-auto px-4 space-y-6">
+        <div class="space-y-6">
           <%!-- Process Flow Diagram (full width) - includes inline scatter/gather visualization --%>
           <.process_flow_diagram
             definition={@definition}

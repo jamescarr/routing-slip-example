@@ -31,6 +31,8 @@ defmodule RoutingExamplesWeb.Layouts do
     default: nil,
     doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
 
+  attr :full_width, :boolean, default: false, doc: "whether to use full viewport width"
+
   slot :inner_block, required: true
 
   def app(assigns) do
@@ -62,10 +64,11 @@ defmodule RoutingExamplesWeb.Layouts do
       </div>
     </header>
 
-    <main class="px-4 py-20 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-2xl space-y-4">
-        {render_slot(@inner_block)}
-      </div>
+    <main class={[
+      "px-4 py-10 sm:px-6 lg:px-8",
+      !@full_width && "max-w-2xl mx-auto"
+    ]}>
+      {render_slot(@inner_block)}
     </main>
 
     <.flash_group flash={@flash} />
