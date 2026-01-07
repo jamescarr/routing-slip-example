@@ -153,35 +153,72 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
           </div>
         </div>
 
-        <%!-- Colocated JS Hook for Mermaid --%>
+        <%!-- Colocated JS Hook for Mermaid with animations --%>
         <script :type={Phoenix.LiveView.ColocatedHook} name=".MermaidDiagram">
           export default {
             mounted() {
               this.renderDiagram();
             },
             updated() {
-              // Re-render when data changes
               this.renderDiagram();
             },
             renderDiagram() {
               const diagramDef = this.el.dataset.diagram;
               if (!diagramDef || !window.mermaid) {
-                // Retry after a short delay if mermaid isn't loaded yet
                 setTimeout(() => this.renderDiagram(), 100);
                 return;
               }
 
-              // Generate unique ID for this render
               const id = `mermaid-${Date.now()}`;
 
               window.mermaid.render(id, diagramDef).then(({svg}) => {
                 this.el.innerHTML = svg;
 
-                // Add click handlers for interactivity if needed
                 const svgEl = this.el.querySelector('svg');
                 if (svgEl) {
                   svgEl.style.maxWidth = '100%';
                   svgEl.style.height = 'auto';
+                  svgEl.style.minHeight = '400px';
+
+                  // Add pulsing animation to Process Manager node
+                  const pmNode = svgEl.querySelector('[id*="PM"]');
+                  if (pmNode) {
+                    pmNode.style.animation = 'pulse 2s ease-in-out infinite';
+                  }
+
+                  // Add flowing animation to active edges (thick orange ones)
+                  const edges = svgEl.querySelectorAll('.edge-pattern, path[stroke-width="3"]');
+                  edges.forEach(edge => {
+                    if (edge.getAttribute('stroke') === '#f59e0b' ||
+                        edge.style.stroke === 'rgb(245, 158, 11)') {
+                      edge.style.animation = 'flowPulse 1.5s ease-in-out infinite';
+                    }
+                  });
+
+                  // Inject CSS animations if not already present
+                  if (!document.getElementById('mermaid-animations')) {
+                    const style = document.createElement('style');
+                    style.id = 'mermaid-animations';
+                    style.textContent = `
+                      @keyframes pulse {
+                        0%, 100% { transform: scale(1); opacity: 1; }
+                        50% { transform: scale(1.05); opacity: 0.9; }
+                      }
+                      @keyframes flowPulse {
+                        0%, 100% { stroke-opacity: 1; stroke-width: 3px; }
+                        50% { stroke-opacity: 0.6; stroke-width: 4px; }
+                      }
+                      @keyframes messageFlow {
+                        0% { stroke-dashoffset: 20; }
+                        100% { stroke-dashoffset: 0; }
+                      }
+                      .mermaid path.edge-thickness-thick {
+                        stroke-dasharray: 5 5;
+                        animation: messageFlow 0.5s linear infinite;
+                      }
+                    `;
+                    document.head.appendChild(style);
+                  }
                 }
               }).catch(err => {
                 console.error('Mermaid render error:', err);
@@ -193,6 +230,10 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
 
         <%!-- Legend --%>
         <div class="flex flex-wrap items-center justify-center gap-4 mt-4 text-sm text-base-content/60">
+          <div class="flex items-center gap-2">
+            <div class="w-4 h-4 rounded-full bg-violet-500 animate-pulse"></div>
+            <span>Process Manager</span>
+          </div>
           <div class="flex items-center gap-2">
             <div class="w-3 h-3 rounded bg-emerald-500"></div>
             <span>Completed</span>
@@ -208,6 +249,14 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
           <div class="flex items-center gap-2">
             <div class="w-3 h-3 rounded bg-cyan-500"></div>
             <span>Parallel Tasks</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="w-6 border-t-2 border-dashed border-base-content/50"></div>
+            <span>Events</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="w-6 border-t-2 border-amber-500"></div>
+            <span>Commands</span>
           </div>
         </div>
       </div>
@@ -225,7 +274,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
   end
 
   # Generate Mermaid diagram definition based on process state
-  # Always shows scatter/gather structure for gathering and purging steps
+  # Shows Process Manager as central coordinator with message flows
   defp generate_mermaid_diagram(current_step, intermediate_results, data_sources, gather_results, purge_results, has_shared_assets) do
     # Define step statuses
     steps = [:init, :gathering, :transferring, :packaging, :uploading, :notifying, :purging, :completed]
@@ -243,7 +292,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
       end)
       |> Map.new()
 
-    # Build gather tasks from data_sources - ALWAYS show them to illustrate parallel nature
+    # Build gather tasks from data_sources
     gather_tasks =
       data_sources
       |> Enum.map(fn source ->
@@ -252,7 +301,6 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
         task_result = Map.get(gather_results, task_key, %{})
         task_status = Map.get(task_result, :status, :pending)
 
-        # Determine class based on step and task status
         class = cond do
           task_status == :completed -> "taskComplete"
           current_step == :gathering -> "taskActive"
@@ -263,7 +311,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
         {source_str |> String.replace("_", " ") |> String.split() |> Enum.map(&String.capitalize/1) |> Enum.join(" "), class, source_str}
       end)
 
-    # Build purge tasks - same data sources
+    # Build purge tasks
     purge_tasks =
       data_sources
       |> Enum.map(fn source ->
@@ -282,46 +330,121 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
         {source_str |> String.replace("_", " ") |> String.split() |> Enum.map(&String.capitalize/1) |> Enum.join(" "), class, source_str}
       end)
 
-    # Determine gather section class (for the scatter/gather diamonds)
-    gather_section_class = step_classes[:gathering]
-    purge_section_class = step_classes[:purging]
+    # Determine Process Manager class based on current activity
+    pm_class = if current_step in [:init, nil, :completed], do: "processManager", else: "processManagerActive"
 
-    # Build the Mermaid diagram - ALWAYS show scatter/gather structure
+    # Track link indexes for styling active connections
+    # We'll number each link and style them based on current step
+    gather_task_count = length(gather_tasks)
+    purge_task_count = length(purge_tasks)
+
+    # Build the Mermaid diagram with Process Manager as central coordinator
     """
-    flowchart TB
+    flowchart LR
       classDef completed fill:#10b981,stroke:#059669,color:#fff,stroke-width:2px
       classDef active fill:#f59e0b,stroke:#d97706,color:#fff,stroke-width:3px
       classDef pending fill:#475569,stroke:#64748b,color:#94a3b8,stroke-width:1px
       classDef taskComplete fill:#2dd4bf,stroke:#14b8a6,color:#0d3d3d,stroke-width:2px
       classDef taskActive fill:#fbbf24,stroke:#f59e0b,color:#78350f,stroke-width:2px
       classDef taskPending fill:#64748b,stroke:#475569,color:#e2e8f0,stroke-width:1px
+      classDef processManager fill:#8b5cf6,stroke:#7c3aed,color:#fff,stroke-width:3px
+      classDef processManagerActive fill:#a855f7,stroke:#9333ea,color:#fff,stroke-width:4px
 
-      INIT[["🚀 Initialize"]]:::#{step_classes[:init]}
+      %% Process Manager - The Central Coordinator
+      PM((("🎯 Process<br/>Manager"))):::#{pm_class}
 
-      %% Gathering Phase - Scatter/Gather
-      INIT --> SCATTER_G{{"⚡ Scatter"}}:::#{gather_section_class}
-      #{Enum.map_join(gather_tasks, "\n    ", fn {name, class, id} -> "SCATTER_G --> G_#{String.upcase(id)}[\"#{name}\"]:::#{class}" end)}
-      #{Enum.map_join(gather_tasks, "\n    ", fn {_name, _class, id} -> "G_#{String.upcase(id)} --> GATHER_G" end)}
-      GATHER_G{{"🔄 Gather"}}:::#{gather_section_class}
+      subgraph workflow[" "]
+        direction TB
+
+        %% Initialize
+        INIT[["🚀 Init"]]:::#{step_classes[:init]}
+
+        %% Gathering Phase
+        subgraph gather["📥 Gather Data"]
+          direction LR
+          #{Enum.map_join(gather_tasks, "\n        ", fn {name, class, id} -> "G_#{String.upcase(id)}[\"#{name}\"]:::#{class}" end)}
+        end
 
     #{if has_shared_assets do
+      "    TRANSFER[\"🔄 Transfer\"]:::#{step_classes[:transferring]}"
+    else
+      ""
+    end}
+
+        %% Sequential Steps
+        PACKAGE[\"📦 Package\"]:::#{step_classes[:packaging]}
+        UPLOAD[\"☁️ Upload\"]:::#{step_classes[:uploading]}
+        NOTIFY[\"📧 Notify\"]:::#{step_classes[:notifying]}
+
+        %% Purging Phase
+        subgraph purge["🗑️ Purge Data"]
+          direction LR
+          #{Enum.map_join(purge_tasks, "\n        ", fn {name, class, id} -> "P_#{String.upcase(id)}[\"#{name}\"]:::#{class}" end)}
+        end
+
+        DONE[["✅ Done"]]:::#{step_classes[:completed]}
+      end
+
+      %% Message flows TO Process Manager (results/events)
+      INIT -.->|"started"| PM
+      #{Enum.map_join(gather_tasks, "\n    ", fn {_name, _class, id} -> "G_#{String.upcase(id)} -.->|\"data\"| PM" end)}
+    #{if has_shared_assets do
+      "  TRANSFER -.->|\"transferred\"| PM"
+    else
+      ""
+    end}
+      PACKAGE -.->|\"packaged\"| PM
+      UPLOAD -.->|\"uploaded\"| PM
+      NOTIFY -.->|\"notified\"| PM
+      #{Enum.map_join(purge_tasks, "\n    ", fn {_name, _class, id} -> "P_#{String.upcase(id)} -.->|\"purged\"| PM" end)}
+
+      %% Commands FROM Process Manager (orchestration)
+      PM ==>|"#{if current_step == :init, do: "▶ execute", else: "execute"}"| INIT
+      PM ==>|"#{if current_step == :gathering, do: "▶ scatter", else: "scatter"}"| gather
+    #{if has_shared_assets do
+      "  PM ==>|\"#{if current_step == :transferring, do: "▶ transfer", else: "transfer"}\"| TRANSFER"
+    else
+      ""
+    end}
+      PM ==>|"#{if current_step == :packaging, do: "▶ package", else: "package"}"| PACKAGE
+      PM ==>|"#{if current_step == :uploading, do: "▶ upload", else: "upload"}"| UPLOAD
+      PM ==>|"#{if current_step == :notifying, do: "▶ notify", else: "notify"}"| NOTIFY
+      PM ==>|"#{if current_step == :purging, do: "▶ scatter", else: "scatter"}"| purge
+      PM ==>|"#{if current_step == :completed, do: "▶ complete", else: "complete"}"| DONE
+
+      %% Workflow sequence
+      INIT --> gather
+    #{if has_shared_assets do
       """
-        GATHER_G --> TRANSFER[\"🔄 Transfer Assets\"]:::#{step_classes[:transferring]}
-        TRANSFER --> PACKAGE[\"📦 Package\"]:::#{step_classes[:packaging]}
+        gather --> TRANSFER
+        TRANSFER --> PACKAGE
       """
     else
-      "  GATHER_G --> PACKAGE[\"📦 Package\"]:::#{step_classes[:packaging]}"
+      "  gather --> PACKAGE"
     end}
-      PACKAGE --> UPLOAD[\"☁️ Upload\"]:::#{step_classes[:uploading]}
-      UPLOAD --> NOTIFY[\"📧 Notify\"]:::#{step_classes[:notifying]}
+      PACKAGE --> UPLOAD
+      UPLOAD --> NOTIFY
+      NOTIFY --> purge
+      purge --> DONE
 
-      %% Purging Phase - Scatter/Gather
-      NOTIFY --> SCATTER_P{{"⚡ Scatter"}}:::#{purge_section_class}
-      #{Enum.map_join(purge_tasks, "\n    ", fn {name, class, id} -> "SCATTER_P --> P_#{String.upcase(id)}[\"#{name}\"]:::#{class}" end)}
-      #{Enum.map_join(purge_tasks, "\n    ", fn {_name, _class, id} -> "P_#{String.upcase(id)} --> GATHER_P" end)}
-      GATHER_P{{"🔄 Gather"}}:::#{purge_section_class}
-      GATHER_P --> DONE[["✅ Completed"]]:::#{step_classes[:completed]}
+      %% Link styling for active connections
+    #{generate_link_styles(current_step, gather_task_count, purge_task_count, has_shared_assets)}
     """
+  end
+
+  # Generate link styles to highlight active message flows
+  defp generate_link_styles(current_step, _gather_count, _purge_count, _has_shared_assets) do
+    case current_step do
+      :init -> "linkStyle 0 stroke:#f59e0b,stroke-width:3px"
+      :gathering -> "linkStyle 1 stroke:#f59e0b,stroke-width:3px"
+      :transferring -> "linkStyle 2 stroke:#f59e0b,stroke-width:3px"
+      :packaging -> "linkStyle 3 stroke:#f59e0b,stroke-width:3px"
+      :uploading -> "linkStyle 4 stroke:#f59e0b,stroke-width:3px"
+      :notifying -> "linkStyle 5 stroke:#f59e0b,stroke-width:3px"
+      :purging -> "linkStyle 6 stroke:#f59e0b,stroke-width:3px"
+      :completed -> "linkStyle 7 stroke:#10b981,stroke-width:3px"
+      _ -> ""
+    end
   end
 
   attr :process, :any, required: true
