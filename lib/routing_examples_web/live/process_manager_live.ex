@@ -300,9 +300,9 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
             <%!-- INTERNAL SERVICES - Left side panel --%>
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
-            <g transform="translate(20, 180)">
+            <g transform="translate(20, 160)">
               <%!-- Internal APIs container --%>
-              <rect x="0" y="0" width="100" height="175" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1" opacity="0.9"/>
+              <rect x="0" y="0" width="100" height="220" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1" opacity="0.9"/>
               <text x="50" y="15" text-anchor="middle" fill="#f97316" font-size="8" font-weight="600">
                 ⚡ INTERNAL APIs
               </text>
@@ -327,6 +327,12 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
               <g transform="translate(10, 130)">
                 <rect x="0" y="0" width="80" height="18" rx="3" fill="#0f172a" stroke="#22c55e" stroke-width="1"/>
                 <text x="40" y="12" text-anchor="middle" fill="#22c55e" font-size="7">Archive API</text>
+              </g>
+              <%!-- Asset Transfer Service --%>
+              <g transform="translate(10, 155)">
+                <rect x="0" y="0" width="80" height="35" rx="3" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5"/>
+                <text x="40" y="14" text-anchor="middle" fill="#fbbf24" font-size="7" font-weight="600">📦 Custodian</text>
+                <text x="40" y="26" text-anchor="middle" fill="#94a3b8" font-size="6">Asset Transfer</text>
               </g>
             </g>
 
@@ -507,6 +513,44 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
               <.flow_arrow x1={cx} y1={310} x2={cx} y2={325} status={arrow_status(:gathering, :transferring, @current_step, @all_steps)} />
               <.flow_step step={:transferring} x={cx} y={345} status={step_status(:transferring, @current_step, @all_steps)} label="Transfer" />
               <.flow_arrow x1={cx} y1={365} x2={cx - 80} y2={380} status={arrow_status(:transferring, :packaging, @current_step, @all_steps)} />
+
+              <%!-- Transfer → Custodian (Asset Transfer Service) communication --%>
+              <%= if step_status(:transferring, @current_step, @all_steps) in [:active, :completed] do %>
+                <%!-- Transfer request to Custodian --%>
+                <path
+                  d={"M #{cx - 28} 345 Q #{cx - 120} 345, 120 335"}
+                  fill="none"
+                  stroke="#fbbf24"
+                  stroke-width="1.5"
+                  stroke-dasharray="4 4"
+                  opacity="0.5"
+                />
+                <%!-- Asset ownership change request --%>
+                <circle r="4" fill="#fbbf24" opacity="0.9">
+                  <animateMotion
+                    dur="1.6s"
+                    repeatCount="indefinite"
+                    path={"M #{cx - 28} 345 Q #{cx - 120} 345, 120 335"}
+                  />
+                </circle>
+                <%!-- Confirmation from Custodian --%>
+                <path
+                  d={"M 120 345 Q #{cx - 100} 360, #{cx - 15} 355"}
+                  fill="none"
+                  stroke="#86efac"
+                  stroke-width="1"
+                  stroke-dasharray="3 3"
+                  opacity="0.3"
+                />
+                <circle r="3" fill="#86efac" opacity="0.7">
+                  <animateMotion
+                    dur="1.2s"
+                    repeatCount="indefinite"
+                    begin="0.5s"
+                    path={"M 120 345 Q #{cx - 100} 360, #{cx - 15} 355"}
+                  />
+                </circle>
+              <% end %>
             <% else %>
               <.flow_arrow x1={cx} y1={310} x2={cx - 80} y2={380} status={arrow_status(:gathering, :packaging, @current_step, @all_steps)} />
             <% end %>
