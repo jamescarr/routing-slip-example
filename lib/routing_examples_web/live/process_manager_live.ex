@@ -298,13 +298,13 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
             </g>
 
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
-            <%!-- EXTERNAL SERVICES - Left side panel --%>
+            <%!-- INTERNAL SERVICES - Left side panel --%>
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
             <g transform="translate(20, 180)">
-              <%!-- External APIs container --%>
-              <rect x="0" y="0" width="100" height="150" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1" opacity="0.9"/>
+              <%!-- Internal APIs container --%>
+              <rect x="0" y="0" width="100" height="175" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1" opacity="0.9"/>
               <text x="50" y="15" text-anchor="middle" fill="#f97316" font-size="8" font-weight="600">
-                ⚡ EXTERNAL APIs
+                ⚡ INTERNAL APIs
               </text>
 
               <%!-- API icons --%>
@@ -324,6 +324,38 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
                 <rect x="0" y="0" width="80" height="18" rx="3" fill="#0f172a" stroke="#475569" stroke-width="1"/>
                 <text x="40" y="12" text-anchor="middle" fill="#f97316" font-size="7">+ more...</text>
               </g>
+              <g transform="translate(10, 130)">
+                <rect x="0" y="0" width="80" height="18" rx="3" fill="#0f172a" stroke="#22c55e" stroke-width="1"/>
+                <text x="40" y="12" text-anchor="middle" fill="#22c55e" font-size="7">Archive API</text>
+              </g>
+            </g>
+
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <%!-- CONTEXT BOUNDARY - Bottom right panel (Postmaster Gateway) --%>
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <g transform="translate(720, 440)">
+              <%!-- Boundary container --%>
+              <rect x="0" y="0" width="160" height="140" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1" opacity="0.9"/>
+              <text x="80" y="18" text-anchor="middle" fill="#ec4899" font-size="9" font-weight="600">
+                🚪 CONTEXT BOUNDARY
+              </text>
+
+              <%!-- Postmaster - Internal Gateway Service --%>
+              <g transform="translate(10, 35)">
+                <rect x="0" y="0" width="140" height="40" rx="4" fill="#0f172a" stroke="#ec4899" stroke-width="1.5"/>
+                <text x="70" y="16" text-anchor="middle" fill="#ec4899" font-size="8" font-weight="600">📮 Postmaster</text>
+                <text x="70" y="30" text-anchor="middle" fill="#94a3b8" font-size="6">Internal Mail Gateway</text>
+              </g>
+
+              <%!-- External Mailer API --%>
+              <g transform="translate(10, 85)">
+                <rect x="0" y="0" width="140" height="40" rx="4" fill="#0f172a" stroke="#a855f7" stroke-width="1"/>
+                <text x="70" y="16" text-anchor="middle" fill="#a855f7" font-size="8" font-weight="600">🌐 SendGrid</text>
+                <text x="70" y="30" text-anchor="middle" fill="#94a3b8" font-size="6">External SMTP Service</text>
+              </g>
+
+              <%!-- Connection arrow from Postmaster to External --%>
+              <line x1="80" y1="75" x2="80" y2="85" stroke="#a855f7" stroke-width="1.5" marker-end="url(#arrow-active)"/>
             </g>
 
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
@@ -490,6 +522,86 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
             <.flow_arrow x1={cx + 80} y1={420} x2={cx} y2={455} status={arrow_status(:notifying, :purging, @current_step, @all_steps)} />
 
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <%!-- Upload → Archive API communication --%>
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <%= if step_status(:uploading, @current_step, @all_steps) in [:active, :completed] do %>
+              <%!-- Upload to Archive API path --%>
+              <path
+                d={"M #{cx - 28} 400 Q #{cx - 100} 380, 100 330"}
+                fill="none"
+                stroke="#22c55e"
+                stroke-width="1.5"
+                stroke-dasharray="4 4"
+                opacity="0.5"
+              />
+              <%!-- Data packet to Archive API --%>
+              <circle r="4" fill="#22c55e" opacity="0.9">
+                <animateMotion
+                  dur="1.5s"
+                  repeatCount="indefinite"
+                  path={"M #{cx - 28} 400 Q #{cx - 100} 380, 100 330"}
+                />
+              </circle>
+              <%!-- Response from Archive API --%>
+              <path
+                d={"M 100 330 Q #{cx - 80} 420, #{cx - 10} 410"}
+                fill="none"
+                stroke="#22c55e"
+                stroke-width="1"
+                stroke-dasharray="3 3"
+                opacity="0.3"
+              />
+              <circle r="3" fill="#86efac" opacity="0.7">
+                <animateMotion
+                  dur="1.2s"
+                  repeatCount="indefinite"
+                  begin="0.5s"
+                  path={"M 100 330 Q #{cx - 80} 420, #{cx - 10} 410"}
+                />
+              </circle>
+            <% end %>
+
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <%!-- Notify → Postmaster (Context Boundary) → External Mailer --%>
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <%= if step_status(:notifying, @current_step, @all_steps) in [:active, :completed] do %>
+              <%!-- Notify to Postmaster gateway path --%>
+              <path
+                d={"M #{cx + 108} 400 Q #{cx + 250} 420, 720 475"}
+                fill="none"
+                stroke="#ec4899"
+                stroke-width="1.5"
+                stroke-dasharray="4 4"
+                opacity="0.5"
+              />
+              <%!-- Email notification packet to Postmaster --%>
+              <circle r="4" fill="#ec4899" opacity="0.9">
+                <animateMotion
+                  dur="1.8s"
+                  repeatCount="indefinite"
+                  path={"M #{cx + 108} 400 Q #{cx + 250} 420, 720 475"}
+                />
+              </circle>
+              <%!-- Delivery confirmation from Postmaster --%>
+              <path
+                d={"M 720 495 Q #{cx + 300} 440, #{cx + 90} 415"}
+                fill="none"
+                stroke="#a855f7"
+                stroke-width="1"
+                stroke-dasharray="3 3"
+                opacity="0.3"
+              />
+              <circle r="3" fill="#d8b4fe" opacity="0.7">
+                <animateMotion
+                  dur="1.3s"
+                  repeatCount="indefinite"
+                  begin="0.6s"
+                  path={"M 720 495 Q #{cx + 300} 440, #{cx + 90} 415"}
+                />
+              </circle>
+            <% end %>
+
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
             <%!-- PURGE PHASE - Fork/Join with Parallel Tasks --%>
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
             <g>
@@ -623,13 +735,13 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
               <text x="227" y="1" fill="#94a3b8" font-size="6">Store</text>
               <%!-- Row 2: Data flow indicators --%>
               <circle cx="8" cy="14" r="3" fill="#f97316"/>
-              <text x="15" y="17" fill="#94a3b8" font-size="6">API Call</text>
-              <circle cx="55" cy="14" r="3" fill="#0ea5e9"/>
-              <text x="62" y="17" fill="#94a3b8" font-size="6">Response</text>
+              <text x="15" y="17" fill="#94a3b8" font-size="6">Internal</text>
+              <circle cx="55" cy="14" r="3" fill="#ec4899"/>
+              <text x="62" y="17" fill="#94a3b8" font-size="6">Boundary</text>
               <circle cx="105" cy="14" r="3" fill="#ef4444"/>
               <text x="112" y="17" fill="#94a3b8" font-size="6">Delete</text>
               <circle cx="150" cy="14" r="3" fill="#22c55e"/>
-              <text x="157" y="17" fill="#94a3b8" font-size="6">Confirm</text>
+              <text x="157" y="17" fill="#94a3b8" font-size="6">Archive</text>
             </g>
           </svg>
         </div>
