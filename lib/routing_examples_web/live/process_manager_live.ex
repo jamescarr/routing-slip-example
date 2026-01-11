@@ -190,14 +190,14 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
                 <stop offset="100%" stop-color="#16a34a"/>
               </linearGradient>
               <%!-- Arrow markers --%>
-              <marker id="arrow-gray" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-                <polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/>
+              <marker id="arrow-gray" markerWidth="3" markerHeight="2.5" refX="2.5" refY="1.25" orient="auto">
+                <polygon points="0 0, 3 1.25, 0 2.5" fill="#64748b"/>
               </marker>
-              <marker id="arrow-active" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-                <polygon points="0 0, 10 3.5, 0 7" fill="#f59e0b"/>
+              <marker id="arrow-active" markerWidth="3" markerHeight="2.5" refX="2.5" refY="1.25" orient="auto">
+                <polygon points="0 0, 3 1.25, 0 2.5" fill="#f59e0b"/>
               </marker>
-              <marker id="arrow-done" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-                <polygon points="0 0, 10 3.5, 0 7" fill="#22c55e"/>
+              <marker id="arrow-done" markerWidth="3" markerHeight="2.5" refX="2.5" refY="1.25" orient="auto">
+                <polygon points="0 0, 3 1.25, 0 2.5" fill="#22c55e"/>
               </marker>
               <%!-- Fork/join diamond markers --%>
               <marker id="diamond" markerWidth="12" markerHeight="12" refX="6" refY="6" orient="auto">
