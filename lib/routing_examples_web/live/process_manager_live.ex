@@ -42,7 +42,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} full_width>
-      <div class="min-h-screen">
+      <div class="min-h-screen" phx-window-keydown="keydown">
         <%!-- Header with EIP-style title --%>
         <div class="text-center mb-6">
           <h1 class="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
@@ -117,10 +117,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
   attr :selected_scenario, :map, default: nil
 
   defp process_flow_diagram(assigns) do
-    current_step = if assigns.instance, do: assigns.instance.current_step, else: nil
-    intermediate_results = if assigns.instance, do: assigns.instance.intermediate_results, else: %{}
-
-    # Use instance context if running, otherwise fall back to selected scenario
+    # Get workflow context
     context =
       cond do
         assigns.instance -> assigns.instance.context
@@ -128,146 +125,399 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
         true -> %{}
       end
 
+    current_step = if assigns.instance, do: assigns.instance.current_step, else: nil
+    intermediate_results = if assigns.instance, do: assigns.instance.intermediate_results, else: %{}
+
+    data_sources = Map.get(context, :data_sources, [:profile, :documents, :preferences])
     has_shared_assets = Map.get(context, :has_shared_assets, false)
 
-    # Get data sources from context to know what parallel tasks exist
-    data_sources = Map.get(context, :data_sources, [:profile, :documents, :preferences])
-
-    # Get the actual task statuses from intermediate_results (nested in "gathering" and "purging")
+    # Get completed tasks
     gather_results = get_nested_task_results(intermediate_results, "gathering")
     purge_results = get_nested_task_results(intermediate_results, "purging")
 
-    # Generate Mermaid diagram definition
-    mermaid_def = generate_mermaid_diagram(current_step, intermediate_results, data_sources, gather_results, purge_results, has_shared_assets)
+    completed_tasks =
+      MapSet.new(
+        Enum.flat_map([gather_results, purge_results], fn results ->
+          results
+          |> Enum.filter(fn {_k, v} -> is_map(v) and Map.get(v, :status) == :completed end)
+          |> Enum.map(fn {k, _v} -> k end)
+        end)
+      )
+
+    # Build steps list
+    base_steps = [:init, :gathering]
+    transfer_steps = if has_shared_assets, do: [:transferring], else: []
+    final_steps = [:packaging, :uploading, :notifying, :purging, :completed]
+    all_steps = base_steps ++ transfer_steps ++ final_steps
+
+    # Calculate task grid layout (max 4 per row)
+    max_per_row = 4
+    task_rows = Enum.chunk_every(data_sources, max_per_row)
+    num_task_rows = length(task_rows)
 
     assigns =
       assigns
       |> assign(:current_step, current_step)
-      |> assign(:intermediate_results, intermediate_results)
-      |> assign(:mermaid_def, mermaid_def)
+      |> assign(:data_sources, data_sources)
+      |> assign(:has_shared_assets, has_shared_assets)
+      |> assign(:completed_tasks, completed_tasks)
+      |> assign(:all_steps, all_steps)
+      |> assign(:task_rows, task_rows)
+      |> assign(:num_task_rows, num_task_rows)
 
     ~H"""
     <div class="card bg-base-200 shadow-xl">
-      <div class="card-body">
-        <h2 class="card-title text-lg mb-4">
+      <div class="card-body p-4">
+        <h2 class="card-title text-lg mb-2">
           <.icon name="hero-map" class="size-5" /> Process Flow
         </h2>
 
-        <%!-- Mermaid.js Flowchart - phx-update="ignore" keeps DOM stable, hook handles updates --%>
-        <div
-          id="mermaid-diagram"
-          phx-hook=".MermaidDiagram"
-          phx-update="ignore"
-          data-diagram={@mermaid_def}
-          class="flex justify-center overflow-x-auto py-4 min-h-[500px]"
-        >
-          <div class="text-center text-base-content/50">
-            <span class="loading loading-dots loading-md"></span>
-            <p class="text-sm mt-2">Loading diagram...</p>
-          </div>
-        </div>
+        <%!-- Flowchart-style SVG Diagram --%>
+        <div class="flex justify-center overflow-x-auto py-4">
+          <svg viewBox="0 0 800 600" class="w-full max-w-4xl" style="max-height: 580px;">
+            <%!-- Definitions: gradients and arrow markers --%>
+            <defs>
+              <linearGradient id="pm-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#8b5cf6"/>
+                <stop offset="100%" stop-color="#6d28d9"/>
+              </linearGradient>
+              <linearGradient id="active-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#f59e0b"/>
+                <stop offset="100%" stop-color="#d97706"/>
+              </linearGradient>
+              <linearGradient id="done-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#22c55e"/>
+                <stop offset="100%" stop-color="#16a34a"/>
+              </linearGradient>
+              <%!-- Arrow markers --%>
+              <marker id="arrow-gray" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/>
+              </marker>
+              <marker id="arrow-active" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#f59e0b"/>
+              </marker>
+              <marker id="arrow-done" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+                <polygon points="0 0, 10 3.5, 0 7" fill="#22c55e"/>
+              </marker>
+              <%!-- Fork/join diamond markers --%>
+              <marker id="diamond" markerWidth="12" markerHeight="12" refX="6" refY="6" orient="auto">
+                <polygon points="6 0, 12 6, 6 12, 0 6" fill="#475569"/>
+              </marker>
+            </defs>
 
-        <%!-- Colocated JS Hook for Mermaid - uses pushEvent for updates --%>
-        <script :type={Phoenix.LiveView.ColocatedHook} name=".MermaidDiagram">
-          export default {
-            mounted() {
-              this.lastDiagram = null;
-              this.renderDiagram();
+            <%!-- Background --%>
+            <rect width="800" height="600" fill="#0f172a" rx="12"/>
 
-              // Listen for diagram updates from LiveView
-              this.handleEvent("update_diagram", ({diagram}) => {
-                if (diagram !== this.lastDiagram) {
-                  this.el.dataset.diagram = diagram;
-                  this.renderDiagram();
-                }
-              });
-            },
-            renderDiagram() {
-              const diagramDef = this.el.dataset.diagram;
-              if (!diagramDef || !window.mermaid) {
-                setTimeout(() => this.renderDiagram(), 100);
-                return;
-              }
+            <%!-- Center X position --%>
+            <% cx = 400 %>
 
-              // Skip if same diagram
-              if (diagramDef === this.lastDiagram) return;
-              this.lastDiagram = diagramDef;
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <%!-- PROCESS MANAGER - Central Orchestrator (Top Center) --%>
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <g transform={"translate(#{cx}, 50)"}>
+              <circle r="38" fill="url(#pm-gradient)" stroke="#a78bfa" stroke-width="3" filter="drop-shadow(0 4px 6px rgba(139, 92, 246, 0.3))"/>
+              <text x="0" y="-6" text-anchor="middle" fill="white" font-size="10" font-weight="700">Process</text>
+              <text x="0" y="6" text-anchor="middle" fill="white" font-size="10" font-weight="700">Manager</text>
+              <text x="0" y="18" text-anchor="middle" fill="#c4b5fd" font-size="7">ORCHESTRATOR</text>
+            </g>
 
-              const id = `mermaid-${Date.now()}`;
+            <%!-- Orchestration line from PM to Init --%>
+            <line x1={cx} y1="88" x2={cx} y2="105" stroke="#a78bfa" stroke-width="2" stroke-dasharray="4 2" opacity="0.6"/>
 
-              window.mermaid.render(id, diagramDef).then(({svg}) => {
-                this.el.innerHTML = svg;
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <%!-- MAIN FLOW - Sequential Steps --%>
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
 
-                const svgEl = this.el.querySelector('svg');
-                if (svgEl) {
-                  svgEl.style.maxWidth = '100%';
-                  svgEl.style.height = 'auto';
-                  svgEl.style.minHeight = '450px';
+            <%!-- Init Step --%>
+            <.flow_step step={:init} x={cx} y={125} status={step_status(:init, @current_step, @all_steps)} label="Initialize" />
+            <.flow_arrow x1={cx} y1={145} x2={cx} y2={165} status={arrow_status(:init, :gathering, @current_step, @all_steps)} />
 
-                  // Add subtle glow animation to Process Manager node only
-                  const pmNode = svgEl.querySelector('[id*="flowchart-PM"]');
-                  if (pmNode) {
-                    pmNode.classList.add('pm-glow');
-                  }
-                }
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <%!-- GATHER PHASE - Fork/Join with Parallel Tasks --%>
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <g>
+              <%!-- Fork diamond --%>
+              <polygon points={"#{cx},180 #{cx+10},190 #{cx},200 #{cx-10},190"} fill={fork_color(:gathering, @current_step, @all_steps)} stroke="#1e293b" stroke-width="1"/>
+              <text x={cx} y="215" text-anchor="middle" fill="#60a5fa" font-size="9" font-weight="600">GATHER</text>
 
-                // Inject CSS animations if not already present
-                if (!document.getElementById('mermaid-animations')) {
-                  const style = document.createElement('style');
-                  style.id = 'mermaid-animations';
-                  style.textContent = `
-                    .pm-glow {
-                      animation: pmGlow 2s ease-in-out infinite;
-                    }
-                    @keyframes pmGlow {
-                      0%, 100% { filter: drop-shadow(0 0 3px #8b5cf6); }
-                      50% { filter: drop-shadow(0 0 8px #a855f7); }
-                    }
-                  `;
-                  document.head.appendChild(style);
-                }
-              }).catch(err => {
-                console.error('Mermaid render error:', err);
-                this.el.innerHTML = `<pre class="text-error text-xs">${err.message}</pre>`;
-              });
-            }
-          }
-        </script>
+              <%!-- Task layout --%>
+              <% task_count = length(@data_sources) %>
+              <% task_width = 68 %>
+              <% total_width = task_count * task_width %>
+              <% start_x = cx - div(total_width, 2) + div(task_width, 2) %>
 
-        <%!-- Legend --%>
-        <div class="flex flex-wrap items-center justify-center gap-4 mt-4 text-sm text-base-content/60">
-          <div class="flex items-center gap-2">
-            <div class="w-4 h-4 rounded-full bg-violet-500 animate-pulse"></div>
-            <span>Process Manager</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded bg-emerald-500"></div>
-            <span>Completed</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded bg-amber-500 animate-pulse"></div>
-            <span>In Progress</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded bg-slate-500"></div>
-            <span>Pending</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <div class="w-3 h-3 rounded bg-cyan-500"></div>
-            <span>Parallel Tasks</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <div class="w-6 border-t-2 border-dashed border-base-content/50"></div>
-            <span>Events</span>
-          </div>
-          <div class="flex items-center gap-2">
-            <div class="w-6 border-t-2 border-amber-500"></div>
-            <span>Commands</span>
-          </div>
+              <%= for {source, idx} <- Enum.with_index(@data_sources) do %>
+                <% task_x = start_x + idx * task_width %>
+                <%!-- Fork line --%>
+                <line x1={cx} y1="200" x2={task_x} y2="225" stroke={task_line_color("gather:#{source}", @current_step, :gathering, @completed_tasks)} stroke-width="1.5"/>
+                <%!-- Task --%>
+                <.parallel_task label={format_source_full(source)} x={task_x} y={245} status={task_status("gather:#{source}", @current_step, :gathering, @completed_tasks)} />
+                <%!-- Join line --%>
+                <line x1={task_x} y1="265" x2={cx} y2="290" stroke={task_line_color("gather:#{source}", @current_step, :gathering, @completed_tasks)} stroke-width="1.5"/>
+              <% end %>
+
+              <%!-- Join diamond --%>
+              <polygon points={"#{cx},290 #{cx+10},300 #{cx},310 #{cx-10},300"} fill={fork_color(:gathering, @current_step, @all_steps)} stroke="#1e293b" stroke-width="1"/>
+              <%= if step_status(:gathering, @current_step, @all_steps) == :completed do %>
+                <circle cx={cx+15} cy="300" r="6" fill="#22c55e"/>
+                <text x={cx+15} y="303" text-anchor="middle" fill="white" font-size="8">✓</text>
+              <% end %>
+            </g>
+
+            <%!-- Gather → (Transfer?) → Package --%>
+            <%= if @has_shared_assets do %>
+              <.flow_arrow x1={cx} y1={310} x2={cx} y2={325} status={arrow_status(:gathering, :transferring, @current_step, @all_steps)} />
+              <.flow_step step={:transferring} x={cx} y={345} status={step_status(:transferring, @current_step, @all_steps)} label="Transfer" />
+              <.flow_arrow x1={cx} y1={365} x2={cx} y2={380} status={arrow_status(:transferring, :packaging, @current_step, @all_steps)} />
+            <% else %>
+              <.flow_arrow x1={cx} y1={310} x2={cx} y2={380} status={arrow_status(:gathering, :packaging, @current_step, @all_steps)} />
+            <% end %>
+
+            <%!-- Processing Row: Package → Upload → Notify --%>
+            <.flow_step step={:packaging} x={cx - 80} y={400} status={step_status(:packaging, @current_step, @all_steps)} label="Package" />
+            <.flow_arrow x1={cx - 52} y1={400} x2={cx - 28} y2={400} status={arrow_status(:packaging, :uploading, @current_step, @all_steps)} horizontal />
+            <.flow_step step={:uploading} x={cx} y={400} status={step_status(:uploading, @current_step, @all_steps)} label="Upload" />
+            <.flow_arrow x1={cx + 28} y1={400} x2={cx + 52} y2={400} status={arrow_status(:uploading, :notifying, @current_step, @all_steps)} horizontal />
+            <.flow_step step={:notifying} x={cx + 80} y={400} status={step_status(:notifying, @current_step, @all_steps)} label="Notify" />
+
+            <%!-- Arrow down to Package row and then to Purge --%>
+            <line x1={cx} y1="380" x2={cx - 80} y2="380" stroke="#475569" stroke-width="1.5"/>
+            <.flow_arrow x1={cx + 80} y1={420} x2={cx} y2={440} status={arrow_status(:notifying, :purging, @current_step, @all_steps)} />
+
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <%!-- PURGE PHASE - Fork/Join with Parallel Tasks --%>
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <g>
+              <%!-- Fork diamond --%>
+              <polygon points={"#{cx},455 #{cx+10},465 #{cx},475 #{cx-10},465"} fill={fork_color(:purging, @current_step, @all_steps)} stroke="#1e293b" stroke-width="1"/>
+              <text x={cx} y="490" text-anchor="middle" fill="#f87171" font-size="9" font-weight="600">PURGE</text>
+
+              <%!-- Purge tasks --%>
+              <% purge_start = cx - div(total_width, 2) + div(task_width, 2) %>
+
+              <%= for {source, idx} <- Enum.with_index(@data_sources) do %>
+                <% task_x = purge_start + idx * task_width %>
+                <%!-- Fork line --%>
+                <line x1={cx} y1="475" x2={task_x} y2="500" stroke={task_line_color("purge:#{source}", @current_step, :purging, @completed_tasks)} stroke-width="1.5"/>
+                <%!-- Task --%>
+                <.parallel_task label={format_source_full(source)} x={task_x} y={520} status={task_status("purge:#{source}", @current_step, :purging, @completed_tasks)} variant="danger" />
+                <%!-- Join line --%>
+                <line x1={task_x} y1="540" x2={cx} y2="560" stroke={task_line_color("purge:#{source}", @current_step, :purging, @completed_tasks)} stroke-width="1.5"/>
+              <% end %>
+
+              <%!-- Join diamond --%>
+              <polygon points={"#{cx},560 #{cx+10},570 #{cx},580 #{cx-10},570"} fill={fork_color(:purging, @current_step, @all_steps)} stroke="#1e293b" stroke-width="1"/>
+              <%= if step_status(:purging, @current_step, @all_steps) == :completed do %>
+                <circle cx={cx+15} cy="570" r="6" fill="#22c55e"/>
+                <text x={cx+15} y="573" text-anchor="middle" fill="white" font-size="8">✓</text>
+              <% end %>
+            </g>
+
+            <%!-- Final: Done indicator --%>
+            <.flow_arrow x1={cx} y1={580} x2={cx + 60} y2={570} status={if @current_step == :completed, do: :completed, else: :pending} />
+            <g transform={"translate(#{cx + 100}, 570)"}>
+              <%= if @current_step == :completed do %>
+                <circle r="25" fill="url(#done-gradient)" stroke="#86efac" stroke-width="2" filter="drop-shadow(0 4px 6px rgba(34, 197, 94, 0.4))"/>
+                <text x="0" y="-2" text-anchor="middle" fill="white" font-size="12">✓</text>
+                <text x="0" y="10" text-anchor="middle" fill="white" font-size="7" font-weight="600">DONE</text>
+              <% else %>
+                <circle r="25" fill="#1e293b" stroke="#475569" stroke-width="2"/>
+                <text x="0" y="4" text-anchor="middle" fill="#64748b" font-size="7" font-weight="600">DONE</text>
+              <% end %>
+            </g>
+
+            <%!-- Legend (top left) --%>
+            <g transform="translate(25, 25)">
+              <rect x="-5" y="-10" width="150" height="24" fill="#1e293b" rx="4" opacity="0.9"/>
+              <circle cx="8" cy="0" r="4" fill="#8b5cf6"/>
+              <text x="16" y="3" fill="#94a3b8" font-size="7">Manager</text>
+              <circle cx="55" cy="0" r="4" fill="#22c55e"/>
+              <text x="63" y="3" fill="#94a3b8" font-size="7">Done</text>
+              <circle cx="95" cy="0" r="4" fill="#f59e0b"/>
+              <text x="103" y="3" fill="#94a3b8" font-size="7">Active</text>
+              <circle cx="135" cy="0" r="4" fill="#64748b"/>
+              <text x="143" y="3" fill="#94a3b8" font-size="7">Pending</text>
+            </g>
+          </svg>
         </div>
       </div>
     </div>
     """
+  end
+
+  # Flow step component - rounded rectangle for main steps
+  attr :step, :atom, required: true
+  attr :x, :integer, required: true
+  attr :y, :integer, required: true
+  attr :status, :atom, required: true
+  attr :label, :string, required: true
+
+  defp flow_step(assigns) do
+    {fill, stroke, text_fill, glow} = case assigns.status do
+      :completed -> {"#166534", "#22c55e", "#fff", "drop-shadow(0 2px 4px rgba(34, 197, 94, 0.3))"}
+      :active -> {"#92400e", "#f59e0b", "#fff", "drop-shadow(0 2px 8px rgba(245, 158, 11, 0.5))"}
+      _ -> {"#1e293b", "#475569", "#94a3b8", "none"}
+    end
+
+    assigns = assigns
+      |> assign(:fill, fill)
+      |> assign(:stroke, stroke)
+      |> assign(:text_fill, text_fill)
+      |> assign(:glow, glow)
+
+    ~H"""
+    <g transform={"translate(#{@x}, #{@y})"} filter={@glow}>
+      <rect x="-28" y="-20" width="56" height="40" rx="8" fill={@fill} stroke={@stroke} stroke-width="2"/>
+      <text x="0" y="5" text-anchor="middle" fill={@text_fill} font-size="9" font-weight="600">{@label}</text>
+      <%= if @status == :completed do %>
+        <circle cx="22" cy="-14" r="7" fill="#22c55e" stroke="#166534" stroke-width="1"/>
+        <text x="22" y="-11" text-anchor="middle" fill="white" font-size="8">✓</text>
+      <% end %>
+      <%= if @status == :active do %>
+        <circle cx="22" cy="-14" r="5" fill="#fbbf24">
+          <animate attributeName="opacity" values="1;0.4;1" dur="1s" repeatCount="indefinite"/>
+        </circle>
+      <% end %>
+    </g>
+    """
+  end
+
+  # Parallel task component - smaller boxes for sub-tasks
+  attr :label, :string, required: true
+  attr :x, :integer, required: true
+  attr :y, :integer, required: true
+  attr :status, :atom, required: true
+  attr :variant, :string, default: "default"
+
+  defp parallel_task(assigns) do
+    {fill, stroke, text_fill} = case {assigns.status, assigns.variant} do
+      {:completed, _} -> {"#166534", "#22c55e", "#fff"}
+      {:active, "danger"} -> {"#7f1d1d", "#ef4444", "#fecaca"}
+      {:active, _} -> {"#78350f", "#f59e0b", "#fef3c7"}
+      {_, "danger"} -> {"#1e293b", "#475569", "#94a3b8"}
+      _ -> {"#1e293b", "#475569", "#94a3b8"}
+    end
+
+    assigns = assigns |> assign(:fill, fill) |> assign(:stroke, stroke) |> assign(:text_fill, text_fill)
+
+    ~H"""
+    <g transform={"translate(#{@x}, #{@y})"}>
+      <rect x="-30" y="-15" width="60" height="30" rx="5" fill={@fill} stroke={@stroke} stroke-width="1.5"/>
+      <text x="0" y="4" text-anchor="middle" fill={@text_fill} font-size="8" font-weight="500">{@label}</text>
+      <%= if @status == :completed do %>
+        <circle cx="24" cy="-9" r="5" fill="#22c55e"/>
+        <text x="24" y="-6" text-anchor="middle" fill="white" font-size="7">✓</text>
+      <% end %>
+      <%= if @status == :active do %>
+        <circle cx="24" cy="-9" r="4" fill="#fbbf24">
+          <animate attributeName="opacity" values="1;0.3;1" dur="0.8s" repeatCount="indefinite"/>
+        </circle>
+      <% end %>
+    </g>
+    """
+  end
+
+  # Flow arrow component
+  attr :x1, :integer, required: true
+  attr :y1, :integer, required: true
+  attr :x2, :integer, required: true
+  attr :y2, :integer, required: true
+  attr :status, :atom, required: true
+  attr :horizontal, :boolean, default: false
+
+  defp flow_arrow(assigns) do
+    {stroke, marker, dasharray, animate} = case assigns.status do
+      :completed -> {"#22c55e", "url(#arrow-done)", "none", false}
+      :active -> {"#f59e0b", "url(#arrow-active)", "6 3", true}
+      _ -> {"#475569", "url(#arrow-gray)", "none", false}
+    end
+
+    assigns = assigns
+      |> assign(:stroke, stroke)
+      |> assign(:marker, marker)
+      |> assign(:dasharray, dasharray)
+      |> assign(:animate, animate)
+
+    ~H"""
+    <line
+      x1={@x1}
+      y1={@y1}
+      x2={@x2}
+      y2={@y2}
+      stroke={@stroke}
+      stroke-width="2"
+      stroke-dasharray={@dasharray}
+      marker-end={@marker}
+    >
+      <%= if @animate do %>
+        <animate attributeName="stroke-dashoffset" from="0" to="-18" dur="0.6s" repeatCount="indefinite"/>
+      <% end %>
+    </line>
+    """
+  end
+
+  # ============================================================================
+  # Flow Diagram Helpers
+  # ============================================================================
+
+  # Helper to determine step status
+  defp step_status(step, current_step, all_steps) do
+    current_idx = Enum.find_index(all_steps, &(&1 == current_step))
+    step_idx = Enum.find_index(all_steps, &(&1 == step))
+
+    cond do
+      # When process is complete, all steps are completed
+      current_step == :completed -> :completed
+      step == current_step -> :active
+      current_idx && step_idx && step_idx < current_idx -> :completed
+      true -> :pending
+    end
+  end
+
+  # Helper to determine task status
+  defp task_status(task_key, current_step, parent_step, completed_tasks) do
+    cond do
+      MapSet.member?(completed_tasks, task_key) -> :completed
+      current_step == parent_step -> :active
+      true -> :pending
+    end
+  end
+
+  # Format source name for display
+  defp format_source_full(source) when is_atom(source) do
+    source |> Atom.to_string() |> String.capitalize()
+  end
+
+  # Determine arrow status between two steps
+  defp arrow_status(from_step, to_step, current_step, all_steps) do
+    from_idx = Enum.find_index(all_steps, &(&1 == from_step))
+    to_idx = Enum.find_index(all_steps, &(&1 == to_step))
+    current_idx = Enum.find_index(all_steps, &(&1 == current_step))
+
+    cond do
+      current_step == :completed -> :completed
+      current_idx && to_idx && current_idx >= to_idx -> :completed
+      current_idx && from_idx && current_idx == from_idx -> :active
+      true -> :pending
+    end
+  end
+
+  # Get color for fork/join diamonds
+  defp fork_color(step, current_step, all_steps) do
+    case step_status(step, current_step, all_steps) do
+      :completed -> "#22c55e"
+      :active -> "#f59e0b"
+      _ -> "#475569"
+    end
+  end
+
+  # Get line color for task connections
+  defp task_line_color(task_key, current_step, parent_step, completed_tasks) do
+    case task_status(task_key, current_step, parent_step, completed_tasks) do
+      :completed -> "#22c55e"
+      :active -> "#f59e0b"
+      _ -> "#475569"
+    end
   end
 
   # Extract nested task results from intermediate_results
@@ -276,180 +526,6 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
     case Map.get(intermediate_results, step_key) do
       %{data: data} when is_map(data) -> data
       _ -> %{}
-    end
-  end
-
-  # Generate Mermaid diagram definition based on process state
-  # Shows Process Manager as central coordinator with message flows
-  defp generate_mermaid_diagram(current_step, intermediate_results, data_sources, gather_results, purge_results, has_shared_assets) do
-    # Define step statuses
-    steps = [:init, :gathering, :transferring, :packaging, :uploading, :notifying, :purging, :completed]
-
-    step_classes =
-      steps
-      |> Enum.map(fn step ->
-        status = get_step_status(step, current_step, intermediate_results)
-        class_name = case status do
-          :completed -> "completed"
-          :in_progress -> "active"
-          _ -> "pending"
-        end
-        {step, class_name}
-      end)
-      |> Map.new()
-
-    # Build gather tasks from data_sources
-    gather_tasks =
-      data_sources
-      |> Enum.map(fn source ->
-        source_str = Atom.to_string(source)
-        task_key = "gather:#{source_str}"
-        task_result = Map.get(gather_results, task_key, %{})
-        task_status = Map.get(task_result, :status, :pending)
-
-        class = cond do
-          task_status == :completed -> "taskComplete"
-          current_step == :gathering -> "taskActive"
-          step_classes[:gathering] == "completed" -> "taskComplete"
-          true -> "taskPending"
-        end
-
-        {source_str |> String.replace("_", " ") |> String.split() |> Enum.map(&String.capitalize/1) |> Enum.join(" "), class, source_str}
-      end)
-
-    # Build purge tasks
-    purge_tasks =
-      data_sources
-      |> Enum.map(fn source ->
-        source_str = Atom.to_string(source)
-        task_key = "purge:#{source_str}"
-        task_result = Map.get(purge_results, task_key, %{})
-        task_status = Map.get(task_result, :status, :pending)
-
-        class = cond do
-          task_status == :completed -> "taskComplete"
-          current_step == :purging -> "taskActive"
-          step_classes[:purging] == "completed" -> "taskComplete"
-          true -> "taskPending"
-        end
-
-        {source_str |> String.replace("_", " ") |> String.split() |> Enum.map(&String.capitalize/1) |> Enum.join(" "), class, source_str}
-      end)
-
-    # Determine Process Manager class based on current activity
-    pm_class = if current_step in [:init, nil, :completed], do: "processManager", else: "processManagerActive"
-
-    # Track link indexes for styling active connections
-    # We'll number each link and style them based on current step
-    gather_task_count = length(gather_tasks)
-    purge_task_count = length(purge_tasks)
-
-    # Build the Mermaid diagram with Process Manager as central coordinator
-    """
-    flowchart LR
-      classDef completed fill:#10b981,stroke:#059669,color:#fff,stroke-width:2px
-      classDef active fill:#f59e0b,stroke:#d97706,color:#fff,stroke-width:3px
-      classDef pending fill:#475569,stroke:#64748b,color:#94a3b8,stroke-width:1px
-      classDef taskComplete fill:#2dd4bf,stroke:#14b8a6,color:#0d3d3d,stroke-width:2px
-      classDef taskActive fill:#fbbf24,stroke:#f59e0b,color:#78350f,stroke-width:2px
-      classDef taskPending fill:#64748b,stroke:#475569,color:#e2e8f0,stroke-width:1px
-      classDef processManager fill:#8b5cf6,stroke:#7c3aed,color:#fff,stroke-width:3px
-      classDef processManagerActive fill:#a855f7,stroke:#9333ea,color:#fff,stroke-width:4px
-
-      %% Process Manager - The Central Coordinator
-      PM((("🎯 Process<br/>Manager"))):::#{pm_class}
-
-      subgraph workflow[" "]
-        direction TB
-
-        %% Initialize
-        INIT[["🚀 Init"]]:::#{step_classes[:init]}
-
-        %% Gathering Phase
-        subgraph gather["📥 Gather Data"]
-          direction LR
-          #{Enum.map_join(gather_tasks, "\n        ", fn {name, class, id} -> "G_#{String.upcase(id)}[\"#{name}\"]:::#{class}" end)}
-        end
-
-    #{if has_shared_assets do
-      "    TRANSFER[\"🔄 Transfer\"]:::#{step_classes[:transferring]}"
-    else
-      ""
-    end}
-
-        %% Sequential Steps
-        PACKAGE[\"📦 Package\"]:::#{step_classes[:packaging]}
-        UPLOAD[\"☁️ Upload\"]:::#{step_classes[:uploading]}
-        NOTIFY[\"📧 Notify\"]:::#{step_classes[:notifying]}
-
-        %% Purging Phase
-        subgraph purge["🗑️ Purge Data"]
-          direction LR
-          #{Enum.map_join(purge_tasks, "\n        ", fn {name, class, id} -> "P_#{String.upcase(id)}[\"#{name}\"]:::#{class}" end)}
-        end
-
-        DONE[["✅ Done"]]:::#{step_classes[:completed]}
-      end
-
-      %% Message flows TO Process Manager (results/events)
-      INIT -.->|"started"| PM
-      #{Enum.map_join(gather_tasks, "\n    ", fn {_name, _class, id} -> "G_#{String.upcase(id)} -.->|\"data\"| PM" end)}
-    #{if has_shared_assets do
-      "  TRANSFER -.->|\"transferred\"| PM"
-    else
-      ""
-    end}
-      PACKAGE -.->|\"packaged\"| PM
-      UPLOAD -.->|\"uploaded\"| PM
-      NOTIFY -.->|\"notified\"| PM
-      #{Enum.map_join(purge_tasks, "\n    ", fn {_name, _class, id} -> "P_#{String.upcase(id)} -.->|\"purged\"| PM" end)}
-
-      %% Commands FROM Process Manager (orchestration)
-      PM ==>|"#{if current_step == :init, do: "▶ execute", else: "execute"}"| INIT
-      PM ==>|"#{if current_step == :gathering, do: "▶ scatter", else: "scatter"}"| gather
-    #{if has_shared_assets do
-      "  PM ==>|\"#{if current_step == :transferring, do: "▶ transfer", else: "transfer"}\"| TRANSFER"
-    else
-      ""
-    end}
-      PM ==>|"#{if current_step == :packaging, do: "▶ package", else: "package"}"| PACKAGE
-      PM ==>|"#{if current_step == :uploading, do: "▶ upload", else: "upload"}"| UPLOAD
-      PM ==>|"#{if current_step == :notifying, do: "▶ notify", else: "notify"}"| NOTIFY
-      PM ==>|"#{if current_step == :purging, do: "▶ scatter", else: "scatter"}"| purge
-      PM ==>|"#{if current_step == :completed, do: "▶ complete", else: "complete"}"| DONE
-
-      %% Workflow sequence
-      INIT --> gather
-    #{if has_shared_assets do
-      """
-        gather --> TRANSFER
-        TRANSFER --> PACKAGE
-      """
-    else
-      "  gather --> PACKAGE"
-    end}
-      PACKAGE --> UPLOAD
-      UPLOAD --> NOTIFY
-      NOTIFY --> purge
-      purge --> DONE
-
-      %% Link styling for active connections
-    #{generate_link_styles(current_step, gather_task_count, purge_task_count, has_shared_assets)}
-    """
-  end
-
-  # Generate link styles to highlight active message flows
-  defp generate_link_styles(current_step, _gather_count, _purge_count, _has_shared_assets) do
-    case current_step do
-      :init -> "linkStyle 0 stroke:#f59e0b,stroke-width:3px"
-      :gathering -> "linkStyle 1 stroke:#f59e0b,stroke-width:3px"
-      :transferring -> "linkStyle 2 stroke:#f59e0b,stroke-width:3px"
-      :packaging -> "linkStyle 3 stroke:#f59e0b,stroke-width:3px"
-      :uploading -> "linkStyle 4 stroke:#f59e0b,stroke-width:3px"
-      :notifying -> "linkStyle 5 stroke:#f59e0b,stroke-width:3px"
-      :purging -> "linkStyle 6 stroke:#f59e0b,stroke-width:3px"
-      :completed -> "linkStyle 7 stroke:#10b981,stroke-width:3px"
-      _ -> ""
     end
   end
 
@@ -506,6 +582,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
             <% else %>
               <.icon name="hero-play" class="size-4" />
               Start Offboarding
+              <kbd class="kbd kbd-xs ml-2 opacity-70">Ctrl+↵</kbd>
             <% end %>
           </.button>
         </.form>
@@ -671,18 +748,26 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
   @impl true
   def handle_event("select_scenario", %{"scenario_id" => scenario_id}, socket) do
     scenario_data = TestScenarios.get_scenario(scenario_id)
-
-    # Generate new diagram for this scenario
-    context = scenario_data.user
-    data_sources = Map.get(context, :data_sources, [:profile, :documents, :preferences])
-    has_shared_assets = Map.get(context, :has_shared_assets, false)
-    mermaid_def = generate_mermaid_diagram(nil, %{}, data_sources, %{}, %{}, has_shared_assets)
+    process_state = build_process_state(nil, scenario_data)
 
     {:noreply,
      socket
      |> assign(:selected_scenario, scenario_id)
      |> assign(:selected_scenario_data, scenario_data)
-     |> push_event("update_diagram", %{diagram: mermaid_def})}
+     |> push_event("update_process_flow", %{processState: process_state})}
+  end
+
+  # Keyboard shortcut: Ctrl+Enter to start workflow
+  def handle_event("keydown", %{"key" => "Enter", "ctrlKey" => true}, socket) do
+    if socket.assigns.current_process == nil || !Instance.active?(socket.assigns.current_process) do
+      handle_event("start_process", %{"scenario_id" => socket.assigns.selected_scenario}, socket)
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("keydown", _params, socket) do
+    {:noreply, socket}
   end
 
   def handle_event("start_process", %{"scenario_id" => scenario_id}, socket) do
@@ -829,39 +914,8 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
 
   # Push diagram update with explicit instance
   defp push_diagram_update(socket, instance) do
-    context = instance.context
-    current_step = instance.current_step
-    intermediate_results = instance.intermediate_results
-
-    data_sources = Map.get(context, :data_sources, [:profile, :documents, :preferences])
-    has_shared_assets = Map.get(context, :has_shared_assets, false)
-
-    gather_results = get_nested_task_results(intermediate_results, "gathering")
-    purge_results = get_nested_task_results(intermediate_results, "purging")
-
-    mermaid_def = generate_mermaid_diagram(current_step, intermediate_results, data_sources, gather_results, purge_results, has_shared_assets)
-
-    push_event(socket, "update_diagram", %{diagram: mermaid_def})
-  end
-
-  defp get_step_status(step_id, current_step, intermediate_results) do
-    cond do
-      # If current step is :completed, the completed step should show as completed, not in_progress
-      step_id == :completed and current_step == :completed -> :completed
-      step_id == current_step -> :in_progress
-      step_completed?(step_id, intermediate_results) -> :completed
-      # If we've reached completed, all previous steps are done
-      current_step == :completed -> :completed
-      true -> :pending
-    end
-  end
-
-  defp step_completed?(step_id, intermediate_results) do
-    key = Atom.to_string(step_id)
-    case Map.get(intermediate_results, key) do
-      %{status: :completed} -> true
-      _ -> false
-    end
+    process_state = build_process_state(instance, nil)
+    push_event(socket, "update_process_flow", %{processState: process_state})
   end
 
   defp message_type_class(:success), do: "text-success"
@@ -921,4 +975,46 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
     end
   end
   defp get_download_info(_), do: nil
+
+  # Build process state for diagram updates (sent to client via push_event)
+  defp build_process_state(instance, scenario_data) do
+    # Get context from instance or scenario
+    context =
+      cond do
+        instance -> instance.context
+        scenario_data -> scenario_data.user
+        true -> %{}
+      end
+
+    current_step = if instance, do: instance.current_step, else: nil
+    intermediate_results = if instance, do: instance.intermediate_results, else: %{}
+
+    data_sources = Map.get(context, :data_sources, [:profile, :documents, :preferences])
+    has_shared_assets = Map.get(context, :has_shared_assets, false)
+
+    # Get completed tasks from gather/purge steps
+    gather_results = get_nested_task_results(intermediate_results, "gathering")
+    purge_results = get_nested_task_results(intermediate_results, "purging")
+
+    completed_tasks =
+      Enum.flat_map([gather_results, purge_results], fn results ->
+        results
+        |> Enum.filter(fn {_k, v} -> is_map(v) and Map.get(v, :status) == :completed end)
+        |> Enum.map(fn {k, _v} -> k end)
+      end)
+
+    # Build the steps list based on context
+    base_steps = [:init, :gathering]
+    transfer_steps = if has_shared_assets, do: [:transferring], else: []
+    final_steps = [:packaging, :uploading, :notifying, :purging, :completed]
+    all_steps = base_steps ++ transfer_steps ++ final_steps
+
+    %{
+      current_step: current_step,
+      data_sources: data_sources,
+      has_shared_assets: has_shared_assets,
+      completed_tasks: completed_tasks,
+      all_steps: all_steps
+    }
+  end
 end
