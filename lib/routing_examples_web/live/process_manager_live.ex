@@ -468,7 +468,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
 
             <%!-- Init Step --%>
             <.flow_step step={:init} x={cx} y={125} status={step_status(:init, @current_step, @all_steps)} label="Initialize" />
-            <.flow_arrow x1={cx} y1={145} x2={cx} y2={165} status={arrow_status(:init, :gathering, @current_step, @all_steps)} />
+            <.flow_arrow x1={cx} y1={145} x2={cx} y2={180} status={arrow_status(:init, :gathering, @current_step, @all_steps)} />
 
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
             <%!-- GATHER PHASE - Fork/Join with Parallel Tasks --%>
@@ -487,11 +487,11 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
               <%= for {source, idx} <- Enum.with_index(@data_sources) do %>
                 <% task_x = start_x + idx * task_width %>
                 <%!-- Fork line --%>
-                <line x1={cx} y1="200" x2={task_x} y2="225" stroke={task_line_color("gather:#{source}", @current_step, :gathering, @completed_tasks)} stroke-width="1.5"/>
+                <line x1={cx} y1="200" x2={task_x} y2="230" stroke={task_line_color("gather:#{source}", @current_step, :gathering, @completed_tasks)} stroke-width="1.5"/>
                 <%!-- Task --%>
                 <.parallel_task label={format_source_full(source)} x={task_x} y={245} status={task_status("gather:#{source}", @current_step, :gathering, @completed_tasks)} />
                 <%!-- Join line --%>
-                <line x1={task_x} y1="265" x2={cx} y2="290" stroke={task_line_color("gather:#{source}", @current_step, :gathering, @completed_tasks)} stroke-width="1.5"/>
+                <line x1={task_x} y1="260" x2={cx} y2="290" stroke={task_line_color("gather:#{source}", @current_step, :gathering, @completed_tasks)} stroke-width="1.5"/>
               <% end %>
 
               <%!-- Join diamond --%>
@@ -615,11 +615,11 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
               <%= for {source, idx} <- Enum.with_index(@data_sources) do %>
                 <% task_x = purge_start + idx * task_width %>
                 <%!-- Fork line --%>
-                <line x1={cx} y1="475" x2={task_x} y2="500" stroke={task_line_color("purge:#{source}", @current_step, :purging, @completed_tasks)} stroke-width="1.5"/>
+                <line x1={cx} y1="475" x2={task_x} y2="505" stroke={task_line_color("purge:#{source}", @current_step, :purging, @completed_tasks)} stroke-width="1.5"/>
                 <%!-- Task --%>
                 <.parallel_task label={format_source_full(source)} x={task_x} y={520} status={task_status("purge:#{source}", @current_step, :purging, @completed_tasks)} variant="danger" />
                 <%!-- Join line --%>
-                <line x1={task_x} y1="540" x2={cx} y2="560" stroke={task_line_color("purge:#{source}", @current_step, :purging, @completed_tasks)} stroke-width="1.5"/>
+                <line x1={task_x} y1="535" x2={cx} y2="560" stroke={task_line_color("purge:#{source}", @current_step, :purging, @completed_tasks)} stroke-width="1.5"/>
 
                 <%!-- Purge: Delete request to external API, confirmation back through PM --%>
                 <%= if MapSet.member?(@completed_tasks, "purge:#{source}") do %>
