@@ -31,6 +31,10 @@ defmodule RoutingExamples.ProcessManager.Offboarding.Steps.Gathering do
       tasks
       |> Task.async_stream(
         fn task ->
+          # Random delay between 900-5000ms to demonstrate parallel scatter/gather
+          delay = :rand.uniform(4100) + 900
+          Process.sleep(delay)
+
           result = FakeDataGenerator.generate(task, instance.context)
 
           # Broadcast individual task completion

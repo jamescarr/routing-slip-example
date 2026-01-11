@@ -65,8 +65,9 @@ defmodule RoutingExamples.ProcessManager.Offboarding.Steps.Purging do
   end
 
   defp purge_data(task, context) do
-    # Simulate deletion time
-    base_delay = 200
+    # Random delay between 900-5000ms to demonstrate parallel scatter/gather
+    delay = :rand.uniform(4100) + 900
+    Process.sleep(delay)
 
     count =
       case task do
@@ -74,9 +75,6 @@ defmodule RoutingExamples.ProcessManager.Offboarding.Steps.Purging do
         :folders -> Map.get(context, :folder_count, 5)
         _ -> :rand.uniform(20)
       end
-
-    delay = base_delay + div(count, 10) * 50 + :rand.uniform(200)
-    Process.sleep(min(delay, 1500))
 
     %{
       source: task,

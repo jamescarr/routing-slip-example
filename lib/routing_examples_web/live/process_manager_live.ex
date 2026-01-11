@@ -33,6 +33,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
       |> assign(:scenario_form, to_form(%{"scenario_id" => "scenario_1"}))
       |> assign(:selected_scenario, "scenario_1")
       |> assign(:selected_scenario_data, initial_scenario)
+      |> assign(:completed_tasks, MapSet.new())
       |> stream(:message_history, [])
 
     {:ok, socket}
@@ -59,6 +60,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
             definition={@definition}
             instance={@current_process}
             selected_scenario={@selected_scenario_data}
+            live_completed_tasks={@completed_tasks}
           />
 
           <%!-- Download Link (when available) - full width --%>
@@ -115,6 +117,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
   attr :definition, :map, required: true
   attr :instance, :any, required: true
   attr :selected_scenario, :map, default: nil
+  attr :live_completed_tasks, :any, default: nil
 
   defp process_flow_diagram(assigns) do
     # Get workflow context
@@ -131,11 +134,11 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
     data_sources = Map.get(context, :data_sources, [:profile, :documents, :preferences])
     has_shared_assets = Map.get(context, :has_shared_assets, false)
 
-    # Get completed tasks
+    # Get completed tasks from intermediate results (for already completed steps)
     gather_results = get_nested_task_results(intermediate_results, "gathering")
     purge_results = get_nested_task_results(intermediate_results, "purging")
 
-    completed_tasks =
+    stored_completed_tasks =
       MapSet.new(
         Enum.flat_map([gather_results, purge_results], fn results ->
           results
@@ -143,6 +146,10 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
           |> Enum.map(fn {k, _v} -> k end)
         end)
       )
+
+    # Merge with live completed tasks for real-time updates during execution
+    live_tasks = assigns.live_completed_tasks || MapSet.new()
+    completed_tasks = MapSet.union(stored_completed_tasks, live_tasks)
 
     # Build steps list
     base_steps = [:init, :gathering]
@@ -776,6 +783,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
         socket =
           socket
           |> assign(:current_process, instance)
+          |> assign(:completed_tasks, MapSet.new())
           |> stream(:message_history, [], reset: true)
           |> add_message(:started, "Process started")
           |> put_flash(:info, "Offboarding started!")
@@ -837,6 +845,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
     socket = maybe_update_process(socket, correlation_id, fn socket ->
       socket
       |> update(:current_process, &ProcessManager.refresh_instance/1)
+      |> update(:completed_tasks, &MapSet.put(&1, task_id))
       |> add_message(:success, "Task #{format_task_name(task_id)} done ✓")
     end)
 
