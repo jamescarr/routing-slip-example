@@ -329,7 +329,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
             <%!-- DATA FLOW: External APIs → Tasks → Process Manager → Storage --%>
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
-            <%= for {source, idx} <- Enum.with_index(@data_sources) do %>
+              <%= for {source, idx} <- Enum.with_index(@data_sources) do %>
               <% task_count = length(@data_sources) %>
               <% task_width = 68 %>
               <% total_width = task_count * task_width %>
@@ -474,9 +474,9 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
             <%= if @has_shared_assets do %>
               <.flow_arrow x1={cx} y1={310} x2={cx} y2={325} status={arrow_status(:gathering, :transferring, @current_step, @all_steps)} />
               <.flow_step step={:transferring} x={cx} y={345} status={step_status(:transferring, @current_step, @all_steps)} label="Transfer" />
-              <.flow_arrow x1={cx} y1={365} x2={cx} y2={380} status={arrow_status(:transferring, :packaging, @current_step, @all_steps)} />
+              <.flow_arrow x1={cx} y1={365} x2={cx - 80} y2={380} status={arrow_status(:transferring, :packaging, @current_step, @all_steps)} />
             <% else %>
-              <.flow_arrow x1={cx} y1={310} x2={cx} y2={380} status={arrow_status(:gathering, :packaging, @current_step, @all_steps)} />
+              <.flow_arrow x1={cx} y1={310} x2={cx - 80} y2={380} status={arrow_status(:gathering, :packaging, @current_step, @all_steps)} />
             <% end %>
 
             <%!-- Processing Row: Package → Upload → Notify --%>
@@ -486,8 +486,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
             <.flow_arrow x1={cx + 28} y1={400} x2={cx + 52} y2={400} status={arrow_status(:uploading, :notifying, @current_step, @all_steps)} horizontal />
             <.flow_step step={:notifying} x={cx + 80} y={400} status={step_status(:notifying, @current_step, @all_steps)} label="Notify" />
 
-            <%!-- Arrow down to Package row and then to Purge --%>
-            <line x1={cx} y1="380" x2={cx - 80} y2="380" stroke="#475569" stroke-width="1.5"/>
+            <%!-- Arrow from Notify down to Purge --%>
             <.flow_arrow x1={cx + 80} y1={420} x2={cx} y2={455} status={arrow_status(:notifying, :purging, @current_step, @all_steps)} />
 
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
@@ -608,18 +607,20 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
 
             <%!-- Legend (top left) --%>
             <g transform="translate(15, 25)">
-              <rect x="-5" y="-10" width="220" height="38" fill="#1e293b" rx="4" opacity="0.9"/>
+              <rect x="-5" y="-10" width="255" height="38" fill="#1e293b" rx="4" opacity="0.9"/>
               <%!-- Row 1: Status indicators --%>
               <circle cx="8" cy="-2" r="3" fill="#8b5cf6"/>
               <text x="15" y="1" fill="#94a3b8" font-size="6">Manager</text>
-              <circle cx="55" cy="-2" r="3" fill="#22c55e"/>
-              <text x="62" y="1" fill="#94a3b8" font-size="6">Done</text>
-              <circle cx="95" cy="-2" r="3" fill="#f59e0b"/>
-              <text x="102" y="1" fill="#94a3b8" font-size="6">Active</text>
-              <circle cx="140" cy="-2" r="3" fill="#64748b"/>
-              <text x="147" y="1" fill="#94a3b8" font-size="6">Pending</text>
-              <circle cx="180" cy="-2" r="3" fill="#a78bfa"/>
-              <text x="187" y="1" fill="#94a3b8" font-size="6">Store</text>
+              <circle cx="55" cy="-2" r="3" fill="#0ea5e9"/>
+              <text x="62" y="1" fill="#94a3b8" font-size="6">Ready</text>
+              <circle cx="95" cy="-2" r="3" fill="#22c55e"/>
+              <text x="102" y="1" fill="#94a3b8" font-size="6">Done</text>
+              <circle cx="135" cy="-2" r="3" fill="#f59e0b"/>
+              <text x="142" y="1" fill="#94a3b8" font-size="6">Active</text>
+              <circle cx="180" cy="-2" r="3" fill="#64748b"/>
+              <text x="187" y="1" fill="#94a3b8" font-size="6">Pending</text>
+              <circle cx="220" cy="-2" r="3" fill="#a78bfa"/>
+              <text x="227" y="1" fill="#94a3b8" font-size="6">Store</text>
               <%!-- Row 2: Data flow indicators --%>
               <circle cx="8" cy="14" r="3" fill="#f97316"/>
               <text x="15" y="17" fill="#94a3b8" font-size="6">API Call</text>
@@ -648,6 +649,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
     {fill, stroke, text_fill, glow} = case assigns.status do
       :completed -> {"#166534", "#22c55e", "#fff", "drop-shadow(0 2px 4px rgba(34, 197, 94, 0.3))"}
       :active -> {"#92400e", "#f59e0b", "#fff", "drop-shadow(0 2px 8px rgba(245, 158, 11, 0.5))"}
+      :ready -> {"#0c4a6e", "#0ea5e9", "#fff", "drop-shadow(0 2px 6px rgba(14, 165, 233, 0.4))"}
       _ -> {"#1e293b", "#475569", "#94a3b8", "none"}
     end
 
@@ -668,6 +670,11 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
       <%= if @status == :active do %>
         <circle cx="22" cy="-14" r="5" fill="#fbbf24">
           <animate attributeName="opacity" values="1;0.4;1" dur="1s" repeatCount="indefinite"/>
+        </circle>
+      <% end %>
+      <%= if @status == :ready do %>
+        <circle cx="22" cy="-14" r="5" fill="#0ea5e9">
+          <animate attributeName="opacity" values="0.6;1;0.6" dur="1.5s" repeatCount="indefinite"/>
         </circle>
       <% end %>
     </g>
@@ -762,6 +769,8 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
       current_step == :completed -> :completed
       step == current_step -> :active
       current_idx && step_idx && step_idx < current_idx -> :completed
+      # When no process started yet, show init as "ready"
+      current_step == nil && step == :init -> :ready
       true -> :pending
     end
   end
