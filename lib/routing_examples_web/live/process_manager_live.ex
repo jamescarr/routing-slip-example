@@ -193,7 +193,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
 
         <%!-- Flowchart-style SVG Diagram --%>
         <div class="flex justify-center overflow-x-auto py-4">
-          <svg viewBox="0 0 900 600" class="w-full max-w-5xl" style="max-height: 580px;">
+          <svg viewBox="0 0 1200 600" class="w-full max-w-7xl" style="max-height: 580px;">
             <%!-- Definitions: gradients and arrow markers --%>
             <defs>
               <linearGradient id="pm-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -238,7 +238,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
             </defs>
 
             <%!-- Background --%>
-            <rect width="900" height="600" fill="#0f172a" rx="12"/>
+            <rect width="1200" height="600" fill="#0f172a" rx="12"/>
 
             <%!-- Center X position for main flow --%>
             <% cx = 360 %>
