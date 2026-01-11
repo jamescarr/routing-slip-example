@@ -151,6 +151,14 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
     live_tasks = assigns.live_completed_tasks || MapSet.new()
     completed_tasks = MapSet.union(stored_completed_tasks, live_tasks)
 
+    # Calculate storage statistics for visualization
+    gathered_count = Enum.count(completed_tasks, &String.starts_with?(&1, "gather:"))
+    purged_count = Enum.count(completed_tasks, &String.starts_with?(&1, "purge:"))
+    total_sources = length(data_sources)
+
+    # Get item counts from intermediate results for storage visualization
+    storage_items = calculate_storage_items(intermediate_results, completed_tasks, data_sources)
+
     # Build steps list
     base_steps = [:init, :gathering]
     transfer_steps = if has_shared_assets, do: [:transferring], else: []
@@ -171,6 +179,10 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
       |> assign(:all_steps, all_steps)
       |> assign(:task_rows, task_rows)
       |> assign(:num_task_rows, num_task_rows)
+      |> assign(:gathered_count, gathered_count)
+      |> assign(:purged_count, purged_count)
+      |> assign(:total_sources, total_sources)
+      |> assign(:storage_items, storage_items)
 
     ~H"""
     <div class="card bg-base-200 shadow-xl">
@@ -181,7 +193,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
 
         <%!-- Flowchart-style SVG Diagram --%>
         <div class="flex justify-center overflow-x-auto py-4">
-          <svg viewBox="0 0 800 600" class="w-full max-w-4xl" style="max-height: 580px;">
+          <svg viewBox="0 0 900 600" class="w-full max-w-5xl" style="max-height: 580px;">
             <%!-- Definitions: gradients and arrow markers --%>
             <defs>
               <linearGradient id="pm-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -195,6 +207,14 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
               <linearGradient id="done-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" stop-color="#22c55e"/>
                 <stop offset="100%" stop-color="#16a34a"/>
+              </linearGradient>
+              <linearGradient id="storage-gradient" x1="0%" y1="100%" x2="0%" y2="0%">
+                <stop offset="0%" stop-color="#0ea5e9"/>
+                <stop offset="100%" stop-color="#38bdf8"/>
+              </linearGradient>
+              <linearGradient id="storage-bg" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="#1e293b"/>
+                <stop offset="100%" stop-color="#0f172a"/>
               </linearGradient>
               <%!-- Arrow markers --%>
               <marker id="arrow-gray" markerWidth="3" markerHeight="2.5" refX="2.5" refY="1.25" orient="auto">
@@ -210,13 +230,192 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
               <marker id="diamond" markerWidth="12" markerHeight="12" refX="6" refY="6" orient="auto">
                 <polygon points="6 0, 12 6, 6 12, 0 6" fill="#475569"/>
               </marker>
+              <%!-- Data packet filter for glow effect --%>
+              <filter id="data-glow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="2" result="blur"/>
+                <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+              </filter>
             </defs>
 
             <%!-- Background --%>
-            <rect width="800" height="600" fill="#0f172a" rx="12"/>
+            <rect width="900" height="600" fill="#0f172a" rx="12"/>
 
-            <%!-- Center X position --%>
-            <% cx = 400 %>
+            <%!-- Center X position for main flow --%>
+            <% cx = 360 %>
+
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <%!-- INTERMEDIATE STORAGE - Right side panel --%>
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <g transform="translate(720, 30)">
+              <%!-- Storage container --%>
+              <rect x="0" y="0" width="160" height="200" rx="8" fill="url(#storage-bg)" stroke="#334155" stroke-width="2"/>
+
+              <%!-- Header --%>
+              <rect x="0" y="0" width="160" height="28" rx="8" fill="#1e293b"/>
+              <rect x="0" y="20" width="160" height="8" fill="#1e293b"/>
+              <text x="80" y="18" text-anchor="middle" fill="#94a3b8" font-size="9" font-weight="600">
+                <tspan fill="#0ea5e9">⬡</tspan> INTERMEDIATE STORAGE
+              </text>
+
+              <%!-- Storage fill level visualization --%>
+              <% fill_percent = if @total_sources > 0, do: @gathered_count / @total_sources * 100, else: 0 %>
+              <% fill_height = fill_percent * 1.4 %>
+
+              <%!-- Background bar --%>
+              <rect x="10" y="35" width="140" height="140" rx="4" fill="#0f172a" stroke="#334155" stroke-width="1"/>
+
+              <%!-- Fill level --%>
+              <%= if fill_height > 0 do %>
+                <rect x="11" y={175 - fill_height} width="138" height={fill_height} rx="3" fill="url(#storage-gradient)" opacity="0.8">
+                  <animate attributeName="opacity" values="0.6;0.9;0.6" dur="2s" repeatCount="indefinite"/>
+                </rect>
+              <% end %>
+
+              <%!-- Data items inside storage --%>
+              <%= for {{source, item_count}, idx} <- Enum.with_index(@storage_items) do %>
+                <% item_y = 45 + idx * 18 %>
+                <g transform={"translate(15, #{item_y})"}>
+                  <circle r="4" fill="#0ea5e9" opacity="0.8"/>
+                  <text x="10" y="3" fill="#cbd5e1" font-size="7">{format_source_full(source)}</text>
+                  <text x="125" y="3" text-anchor="end" fill="#0ea5e9" font-size="7" font-weight="600">{item_count} items</text>
+                </g>
+            <% end %>
+
+              <%!-- Empty state --%>
+              <%= if @storage_items == [] do %>
+                <text x="80" y="105" text-anchor="middle" fill="#475569" font-size="8">Awaiting data...</text>
+            <% end %>
+
+              <%!-- Stats footer --%>
+              <rect x="0" y="180" width="160" height="20" rx="0" fill="#1e293b"/>
+              <rect x="0" y="192" width="160" height="8" rx="8" fill="#1e293b"/>
+              <text x="15" y="193" fill="#64748b" font-size="7">
+                Gathered: <tspan fill="#22c55e" font-weight="600">{@gathered_count}/{@total_sources}</tspan>
+              </text>
+              <text x="95" y="193" fill="#64748b" font-size="7">
+                Purged: <tspan fill="#f87171" font-weight="600">{@purged_count}/{@total_sources}</tspan>
+              </text>
+            </g>
+
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <%!-- EXTERNAL SERVICES - Left side panel --%>
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <g transform="translate(20, 180)">
+              <%!-- External APIs container --%>
+              <rect x="0" y="0" width="100" height="150" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1" opacity="0.9"/>
+              <text x="50" y="15" text-anchor="middle" fill="#f97316" font-size="8" font-weight="600">
+                ⚡ EXTERNAL APIs
+              </text>
+
+              <%!-- API icons --%>
+              <g transform="translate(10, 30)">
+                <rect x="0" y="0" width="80" height="18" rx="3" fill="#0f172a" stroke="#475569" stroke-width="1"/>
+                <text x="40" y="12" text-anchor="middle" fill="#f97316" font-size="7">Profile API</text>
+              </g>
+              <g transform="translate(10, 55)">
+                <rect x="0" y="0" width="80" height="18" rx="3" fill="#0f172a" stroke="#475569" stroke-width="1"/>
+                <text x="40" y="12" text-anchor="middle" fill="#f97316" font-size="7">Docs Service</text>
+              </g>
+              <g transform="translate(10, 80)">
+                <rect x="0" y="0" width="80" height="18" rx="3" fill="#0f172a" stroke="#475569" stroke-width="1"/>
+                <text x="40" y="12" text-anchor="middle" fill="#f97316" font-size="7">Prefs Store</text>
+              </g>
+              <g transform="translate(10, 105)">
+                <rect x="0" y="0" width="80" height="18" rx="3" fill="#0f172a" stroke="#475569" stroke-width="1"/>
+                <text x="40" y="12" text-anchor="middle" fill="#f97316" font-size="7">+ more...</text>
+              </g>
+            </g>
+
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <%!-- DATA FLOW: External APIs → Tasks → Process Manager → Storage --%>
+            <%!-- ═══════════════════════════════════════════════════════════════ --%>
+            <%= for {source, idx} <- Enum.with_index(@data_sources) do %>
+              <% task_count = length(@data_sources) %>
+              <% task_width = 68 %>
+              <% total_width = task_count * task_width %>
+              <% start_x = cx - div(total_width, 2) + div(task_width, 2) %>
+              <% task_x = start_x + idx * task_width %>
+              <% task_key = "gather:#{source}" %>
+
+              <%= if MapSet.member?(@completed_tasks, task_key) do %>
+                <%!-- STEP 1: API call line (task → external API) --%>
+                <path
+                  d={"M #{task_x - 25} 245 Q #{task_x - 80} 245, 120 #{220 + min(idx, 3) * 25}"}
+                  fill="none"
+                  stroke="#f97316"
+                  stroke-width="1"
+                  stroke-dasharray="3 3"
+                  opacity="0.4"
+                />
+
+                <%!-- Request packet going TO external API --%>
+                <circle r="3" fill="#f97316" opacity="0.7">
+                  <animateMotion
+                    dur={"#{1.0 + idx * 0.2}s"}
+                    repeatCount="indefinite"
+                    path={"M #{task_x - 25} 245 Q #{task_x - 80} 245, 120 #{220 + min(idx, 3) * 25}"}
+                  />
+                </circle>
+
+                <%!-- STEP 2: Response from API back to task --%>
+                <path
+                  d={"M 120 #{220 + min(idx, 3) * 25} Q #{task_x - 60} 220, #{task_x} 235"}
+                  fill="none"
+                  stroke="#0ea5e9"
+                  stroke-width="1"
+                  stroke-dasharray="3 3"
+                  opacity="0.3"
+                />
+
+                <circle r="3" fill="#0ea5e9" opacity="0.7">
+                  <animateMotion
+                    dur={"#{0.8 + idx * 0.1}s"}
+                    repeatCount="indefinite"
+                    begin={"#{0.3 + idx * 0.05}s"}
+                    path={"M 120 #{220 + min(idx, 3) * 25} Q #{task_x - 60} 220, #{task_x} 235"}
+                  />
+                </circle>
+
+                <%!-- STEP 3: Task sends data to Process Manager (up to PM at cx, 50) --%>
+                <path
+                  d={"M #{task_x} 230 Q #{task_x} 150, #{cx} 88"}
+                  fill="none"
+                  stroke="#0ea5e9"
+                  stroke-width="1.5"
+                  stroke-dasharray="4 4"
+                  opacity="0.4"
+                />
+
+                <circle r="4" fill="#0ea5e9" filter="url(#data-glow)">
+                  <animateMotion
+                    dur={"#{1.2 + idx * 0.2}s"}
+                    repeatCount="indefinite"
+                    begin={"#{0.8 + idx * 0.1}s"}
+                    path={"M #{task_x} 230 Q #{task_x} 150, #{cx} 88"}
+                  />
+                  <animate attributeName="opacity" values="1;0.6;1" dur="0.5s" repeatCount="indefinite"/>
+                </circle>
+
+                <%!-- STEP 4: PM stores data in Intermediate Storage --%>
+                <path
+                  d={"M #{cx + 38} 50 Q #{cx + 180} 50, 720 #{80 + idx * 12}"}
+                  fill="none"
+                  stroke="#a78bfa"
+                  stroke-width="1"
+                  stroke-dasharray="4 4"
+                  opacity="0.3"
+                />
+
+                <circle r="3" fill="#a78bfa" opacity="0.8">
+                  <animateMotion
+                    dur={"#{1.0 + idx * 0.15}s"}
+                    repeatCount="indefinite"
+                    begin={"#{1.5 + idx * 0.2}s"}
+                    path={"M #{cx + 38} 50 Q #{cx + 180} 50, 720 #{80 + idx * 12}"}
+                  />
+                </circle>
+              <% end %>
+            <% end %>
 
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
             <%!-- PROCESS MANAGER - Central Orchestrator (Top Center) --%>
@@ -289,7 +488,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
 
             <%!-- Arrow down to Package row and then to Purge --%>
             <line x1={cx} y1="380" x2={cx - 80} y2="380" stroke="#475569" stroke-width="1.5"/>
-            <.flow_arrow x1={cx + 80} y1={420} x2={cx} y2={440} status={arrow_status(:notifying, :purging, @current_step, @all_steps)} />
+            <.flow_arrow x1={cx + 80} y1={420} x2={cx} y2={455} status={arrow_status(:notifying, :purging, @current_step, @all_steps)} />
 
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
             <%!-- PURGE PHASE - Fork/Join with Parallel Tasks --%>
@@ -310,6 +509,80 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
                 <.parallel_task label={format_source_full(source)} x={task_x} y={520} status={task_status("purge:#{source}", @current_step, :purging, @completed_tasks)} variant="danger" />
                 <%!-- Join line --%>
                 <line x1={task_x} y1="540" x2={cx} y2="560" stroke={task_line_color("purge:#{source}", @current_step, :purging, @completed_tasks)} stroke-width="1.5"/>
+
+                <%!-- Purge: Delete request to external API, confirmation back through PM --%>
+                <%= if MapSet.member?(@completed_tasks, "purge:#{source}") do %>
+                  <%!-- STEP 1: DELETE request going TO external API --%>
+                  <path
+                    d={"M #{task_x - 25} 520 Q #{task_x - 100} 400, 100 #{280 + min(idx, 3) * 25}"}
+                    fill="none"
+                    stroke="#ef4444"
+                    stroke-width="1"
+                    stroke-dasharray="3 3"
+                    opacity="0.3"
+                  />
+                  <circle r="3" fill="#ef4444" opacity="0.8">
+                    <animateMotion
+                      dur={"#{1.0 + idx * 0.15}s"}
+                      repeatCount="indefinite"
+                      path={"M #{task_x - 25} 520 Q #{task_x - 100} 400, 100 #{280 + min(idx, 3) * 25}"}
+                    />
+                  </circle>
+
+                  <%!-- STEP 2: Confirmation from API back to task --%>
+                  <path
+                    d={"M 100 #{280 + min(idx, 3) * 25} Q #{task_x - 60} 480, #{task_x} 510"}
+                    fill="none"
+                    stroke="#22c55e"
+                    stroke-width="1"
+                    stroke-dasharray="3 3"
+                    opacity="0.3"
+                  />
+                  <circle r="3" fill="#22c55e" opacity="0.7">
+                    <animateMotion
+                      dur={"#{0.8 + idx * 0.1}s"}
+                      repeatCount="indefinite"
+                      begin={"#{0.4 + idx * 0.05}s"}
+                      path={"M 100 #{280 + min(idx, 3) * 25} Q #{task_x - 60} 480, #{task_x} 510"}
+                    />
+                  </circle>
+
+                  <%!-- STEP 3: Task reports completion to Process Manager --%>
+                  <path
+                    d={"M #{task_x} 505 Q #{task_x} 300, #{cx} 88"}
+                    fill="none"
+                    stroke="#22c55e"
+                    stroke-width="1.5"
+                    stroke-dasharray="4 4"
+                    opacity="0.3"
+                  />
+                  <circle r="4" fill="#22c55e" opacity="0.8">
+                    <animateMotion
+                      dur={"#{1.5 + idx * 0.2}s"}
+                      repeatCount="indefinite"
+                      begin={"#{0.8 + idx * 0.1}s"}
+                      path={"M #{task_x} 505 Q #{task_x} 300, #{cx} 88"}
+                    />
+                  </circle>
+
+                  <%!-- STEP 4: PM updates Storage with deletion status --%>
+                  <path
+                    d={"M #{cx + 38} 50 Q #{cx + 180} 80, 720 #{160 + idx * 8}"}
+                    fill="none"
+                    stroke="#a78bfa"
+                    stroke-width="1"
+                    stroke-dasharray="4 4"
+                    opacity="0.25"
+                  />
+                  <circle r="3" fill="#a78bfa" opacity="0.7">
+                    <animateMotion
+                      dur={"#{0.8 + idx * 0.1}s"}
+                      repeatCount="indefinite"
+                      begin={"#{1.8 + idx * 0.15}s"}
+                      path={"M #{cx + 38} 50 Q #{cx + 180} 80, 720 #{160 + idx * 8}"}
+                    />
+                  </circle>
+                <% end %>
               <% end %>
 
               <%!-- Join diamond --%>
@@ -321,7 +594,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
             </g>
 
             <%!-- Final: Done indicator --%>
-            <.flow_arrow x1={cx} y1={580} x2={cx + 60} y2={570} status={if @current_step == :completed, do: :completed, else: :pending} />
+            <.flow_arrow x1={cx + 10} y1={570} x2={cx + 75} y2={570} status={if @current_step == :completed, do: :completed, else: :pending} horizontal />
             <g transform={"translate(#{cx + 100}, 570)"}>
               <%= if @current_step == :completed do %>
                 <circle r="25" fill="url(#done-gradient)" stroke="#86efac" stroke-width="2" filter="drop-shadow(0 4px 6px rgba(34, 197, 94, 0.4))"/>
@@ -334,16 +607,28 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
             </g>
 
             <%!-- Legend (top left) --%>
-            <g transform="translate(25, 25)">
-              <rect x="-5" y="-10" width="150" height="24" fill="#1e293b" rx="4" opacity="0.9"/>
-              <circle cx="8" cy="0" r="4" fill="#8b5cf6"/>
-              <text x="16" y="3" fill="#94a3b8" font-size="7">Manager</text>
-              <circle cx="55" cy="0" r="4" fill="#22c55e"/>
-              <text x="63" y="3" fill="#94a3b8" font-size="7">Done</text>
-              <circle cx="95" cy="0" r="4" fill="#f59e0b"/>
-              <text x="103" y="3" fill="#94a3b8" font-size="7">Active</text>
-              <circle cx="135" cy="0" r="4" fill="#64748b"/>
-              <text x="143" y="3" fill="#94a3b8" font-size="7">Pending</text>
+            <g transform="translate(15, 25)">
+              <rect x="-5" y="-10" width="220" height="38" fill="#1e293b" rx="4" opacity="0.9"/>
+              <%!-- Row 1: Status indicators --%>
+              <circle cx="8" cy="-2" r="3" fill="#8b5cf6"/>
+              <text x="15" y="1" fill="#94a3b8" font-size="6">Manager</text>
+              <circle cx="55" cy="-2" r="3" fill="#22c55e"/>
+              <text x="62" y="1" fill="#94a3b8" font-size="6">Done</text>
+              <circle cx="95" cy="-2" r="3" fill="#f59e0b"/>
+              <text x="102" y="1" fill="#94a3b8" font-size="6">Active</text>
+              <circle cx="140" cy="-2" r="3" fill="#64748b"/>
+              <text x="147" y="1" fill="#94a3b8" font-size="6">Pending</text>
+              <circle cx="180" cy="-2" r="3" fill="#a78bfa"/>
+              <text x="187" y="1" fill="#94a3b8" font-size="6">Store</text>
+              <%!-- Row 2: Data flow indicators --%>
+              <circle cx="8" cy="14" r="3" fill="#f97316"/>
+              <text x="15" y="17" fill="#94a3b8" font-size="6">API Call</text>
+              <circle cx="55" cy="14" r="3" fill="#0ea5e9"/>
+              <text x="62" y="17" fill="#94a3b8" font-size="6">Response</text>
+              <circle cx="105" cy="14" r="3" fill="#ef4444"/>
+              <text x="112" y="17" fill="#94a3b8" font-size="6">Delete</text>
+              <circle cx="150" cy="14" r="3" fill="#22c55e"/>
+              <text x="157" y="17" fill="#94a3b8" font-size="6">Confirm</text>
             </g>
           </svg>
         </div>
@@ -534,6 +819,26 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
       %{data: data} when is_map(data) -> data
       _ -> %{}
     end
+  end
+
+  # Calculate storage items for visualization
+  # Returns list of {source, item_count} tuples for completed gather tasks
+  defp calculate_storage_items(intermediate_results, completed_tasks, data_sources) do
+    gather_results = get_nested_task_results(intermediate_results, "gathering")
+
+    data_sources
+    |> Enum.filter(fn source ->
+      MapSet.member?(completed_tasks, "gather:#{source}")
+    end)
+    |> Enum.map(fn source ->
+      task_key = "gather:#{source}"
+      item_count =
+        case Map.get(gather_results, task_key) do
+          %{item_count: count} -> count
+          _ -> :rand.uniform(50) + 10  # Fallback for live updates before step completes
+        end
+      {source, item_count}
+    end)
   end
 
   attr :process, :any, required: true
