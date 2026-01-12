@@ -93,3 +93,43 @@ config :phoenix_live_view,
 
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
+
+# =============================================================================
+# RabbitMQ Messenger Configuration
+# =============================================================================
+# Requires RabbitMQ running: docker-compose up -d
+# Comment out to use PubSub (GenServer-based) instead.
+config :routing_examples, :routing_slip_messenger,
+  RoutingExamples.RoutingSlip.Messenger.RabbitMQ
+
+config :routing_examples, RoutingExamples.RoutingSlip.Messenger.RabbitMQ,
+  connection: [
+    host: "localhost",
+    port: 5672,
+    username: "guest",
+    password: "guest",
+    virtual_host: "/"
+  ],
+  messages_exchange: "routing_slip.messages",
+  events_exchange: "routing_slip.events"
+
+# =============================================================================
+# LocalStack S3 Configuration
+# =============================================================================
+# Requires LocalStack running: docker-compose up -d
+config :ex_aws,
+  access_key_id: "test",
+  secret_access_key: "test",
+  region: "us-east-1"
+
+config :ex_aws, :s3,
+  scheme: "http://",
+  host: "localhost",
+  port: 4566,
+  # Use path-style URLs for LocalStack
+  path_style: true
+
+config :routing_examples, :s3,
+  bucket: "gdpr-exports",
+  # Pre-signed URL expiry in seconds (7 days)
+  signed_url_expiry: 7 * 24 * 60 * 60

@@ -371,3 +371,165 @@ Where the server handled it via:
       document = LazyHTML.from_fragment(html)
       matches = LazyHTML.filter(document, "your-complex-selector")
       IO.inspect(matches, label: "Matches")
+
+<!-- phoenix:liveview-end -->
+
+## SVG Flow Diagram Guidelines
+
+When creating process flow diagrams in Phoenix LiveView using inline SVG, follow these best practices:
+
+### Layout Architecture
+
+- **Use a center reference point** (e.g., `cx = 360`) for positioning elements symmetrically
+- **Organize in logical sections**: orchestrator hub at top, parallel task phases in middle, sequential steps grouped together
+- **Leave adequate spacing** between elements for arrows and labels (200px+ vertical gap for arrow labels)
+- **Use panels for external systems** positioned at canvas edges (Internal APIs left, Storage right, Context Boundaries bottom-right)
+
+### Component Abstraction
+
+Create reusable function components for repeated elements:
+
+```elixir
+# Main process steps (rounded rectangles)
+defp flow_step(assigns) do
+  {fill, stroke, text_fill, glow} = case assigns.status do
+    :completed -> {"#166534", "#22c55e", "#fff", "drop-shadow(...)"}
+    :active -> {"#92400e", "#f59e0b", "#fff", "drop-shadow(...)"}
+    :ready -> {"#0c4a6e", "#0ea5e9", "#fff", "drop-shadow(...)"}
+    _ -> {"#1e293b", "#475569", "#94a3b8", "none"}
+  end
+  # ... render SVG
+end
+
+# Smaller boxes for parallel sub-tasks
+defp parallel_task(assigns)
+
+# Directional connectors with status-aware styling
+defp flow_arrow(assigns)
+```
+
+### Status-Driven Color Vocabulary
+
+Use consistent colors across all diagrams:
+
+| Color | Hex | Usage |
+|-------|-----|-------|
+| Purple | `#8b5cf6` | Process Manager/Orchestrator |
+| Cyan | `#0ea5e9` | Ready/waiting to start |
+| Orange | `#f59e0b` | Active/in-progress |
+| Green | `#22c55e` | Completed/success |
+| Gray | `#64748b` | Pending |
+| Pink | `#ec4899` | Context boundaries/gateways |
+| Red | `#ef4444` | Delete/destructive operations |
+
+### Arrow Connections
+
+- **Arrows must touch their targets** - calculate exact coordinates to element edges
+- Use `marker-end` with SVG `<marker>` definitions for arrowheads
+- Keep arrowhead sizes proportional (smaller is often better)
+- Horizontal arrows need special handling for proper marker orientation
+
+```html
+<defs>
+  <marker id="arrow-done" viewBox="0 0 10 10" refX="9" refY="5"
+          markerWidth="3" markerHeight="3" orient="auto-start-reverse">
+    <path d="M 0 0 L 10 5 L 0 10 z" fill="#22c55e"/>
+  </marker>
+</defs>
+```
+
+### Fork/Join Patterns (Scatter/Gather)
+
+- Use **diamond shapes** (`<polygon>`) for fork and join points
+- **Dynamically position parallel tasks** based on count:
+
+```elixir
+<% task_count = length(@data_sources) %>
+<% task_width = 68 %>
+<% total_width = task_count * task_width %>
+<% start_x = cx - div(total_width, 2) + div(task_width, 2) %>
+
+<%= for {source, idx} <- Enum.with_index(@data_sources) do %>
+  <% task_x = start_x + idx * task_width %>
+  <%!-- Fork line from diamond to task --%>
+  <line x1={cx} y1="200" x2={task_x} y2="225" stroke={line_color} />
+  <%!-- Task box --%>
+  <.parallel_task label={source} x={task_x} y={245} status={status} />
+  <%!-- Join line from task back to diamond --%>
+  <line x1={task_x} y1="265" x2={cx} y2="290" stroke={line_color} />
+<% end %>
+```
+
+- Track individual task completion with `MapSet` for granular status updates
+
+### Animated Data Flows
+
+- Use `<path>` with quadratic Bezier curves (`Q`) for smooth curved paths
+- Animate with `<animateMotion>` following the same path
+- **Stagger animations** with `begin` delays and varying `dur` times
+- Use `stroke-dasharray` for dashed lines showing data paths
+- Layer: path first (low opacity), then animated circle on top
+
+```html
+<%!-- Data flow path --%>
+<path
+  d={"M #{start_x} #{start_y} Q #{control_x} #{control_y}, #{end_x} #{end_y}"}
+  fill="none"
+  stroke="#0ea5e9"
+  stroke-width="1.5"
+  stroke-dasharray="4 4"
+  opacity="0.4"
+/>
+
+<%!-- Animated packet --%>
+<circle r="4" fill="#0ea5e9" opacity="0.9">
+  <animateMotion
+    dur="1.5s"
+    repeatCount="indefinite"
+    begin="0.3s"
+    path={"M #{start_x} #{start_y} Q #{control_x} #{control_y}, #{end_x} #{end_y}"}
+  />
+</circle>
+```
+
+### Real-time Updates
+
+- Pass `completed_tasks` MapSet to track individual task completion
+- Conditionally render data flow animations based on step/task status:
+
+```elixir
+<%= if step_status(:uploading, @current_step, @all_steps) in [:active, :completed] do %>
+  <%!-- Show upload animation --%>
+<% end %>
+```
+
+- Use `in [:active, :completed]` checks to show animations during and after execution
+
+### Legend & Context
+
+- **Always include a legend** explaining color meanings
+- Group related indicators (status row, data flow row)
+- Keep legend compact but readable (6-7px font sizes work well in SVG)
+
+```html
+<g transform="translate(15, 25)">
+  <rect x="-5" y="-10" width="255" height="38" fill="#1e293b" rx="4" opacity="0.9"/>
+  <circle cx="8" cy="-2" r="3" fill="#8b5cf6"/>
+  <text x="15" y="1" fill="#94a3b8" font-size="6">Manager</text>
+  <!-- ... more legend items ... -->
+</g>
+```
+
+### External System Representation
+
+- **Internal APIs** - services within your domain (typically left panel)
+- **Intermediate Storage** - temporary data holding (right panel with fill visualization)
+- **Context Boundaries** - gateways to external world (separate panel showing internal wrapper → external service)
+
+### Common Pitfalls to Avoid
+
+- Don't leave orphan lines that don't connect to anything
+- Ensure arrows point to the correct step (verify coordinates!)
+- Remove decorative elements that don't serve a purpose
+- Test all scenarios to ensure dynamic layouts work with different data counts
+- Don't forget to update the legend when adding new visual elements

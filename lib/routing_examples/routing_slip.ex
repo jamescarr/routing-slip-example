@@ -10,53 +10,41 @@ defmodule RoutingExamples.RoutingSlip do
   2. Processes it
   3. Removes itself from the routing slip
   4. Forwards to the next destination
+
+  This module delegates to the configured `Messenger` implementation,
+  allowing the underlying transport to be swapped (PubSub, RabbitMQ, etc.).
   """
 
-  alias RoutingExamples.RoutingSlip.Node
+  alias RoutingExamples.RoutingSlip.Messenger
+
+  # ============================================================================
+  # Node Management (delegated to Messenger)
+  # ============================================================================
 
   @doc """
   Creates and registers a new node with the given name.
-  Returns {:ok, pid} on success, {:error, reason} on failure.
+  Returns {:ok, ref} on success, {:error, reason} on failure.
   """
-  def create_node(name) when is_binary(name) and byte_size(name) > 0 do
-    case DynamicSupervisor.start_child(
-           RoutingExamples.RoutingSlip.NodeSupervisor,
-           {Node, name}
-         ) do
-      {:ok, pid} -> {:ok, pid}
-      {:error, {:already_started, pid}} -> {:error, {:already_exists, pid}}
-      error -> error
-    end
-  end
+  defdelegate create_node(name), to: Messenger
+
+  @doc """
+  Deletes a node by name.
+  """
+  defdelegate delete_node(name), to: Messenger
 
   @doc """
   Lists all registered node names.
   """
-  def list_nodes do
-    Registry.select(RoutingExamples.RoutingSlip.NodeRegistry, [{{:"$1", :_, :_}, [], [:"$1"]}])
-    |> Enum.sort()
-  end
+  defdelegate list_nodes(), to: Messenger
 
   @doc """
   Checks if a node with the given name exists.
   """
-  def node_exists?(name) do
-    case Registry.lookup(RoutingExamples.RoutingSlip.NodeRegistry, name) do
-      [{_pid, _value}] -> true
-      [] -> false
-    end
-  end
+  defdelegate node_exists?(name), to: Messenger
 
-  @doc """
-  Gets stats for a specific node.
-  """
-  def get_node_stats(name) do
-    if node_exists?(name) do
-      Node.get_stats(name)
-    else
-      {:error, :not_found}
-    end
-  end
+  # ============================================================================
+  # Message Sending
+  # ============================================================================
 
   @doc """
   Sends a message with a routing slip to the first destination.
@@ -73,9 +61,7 @@ defmodule RoutingExamples.RoutingSlip do
       when is_list(destinations) and length(destinations) > 0 do
     [first_destination | _rest] = destinations
 
-    unless node_exists?(first_destination) do
-      {:error, {:node_not_found, first_destination}}
-    else
+    if Messenger.node_exists?(first_destination) do
       message_id = generate_message_id()
 
       message = %{
@@ -87,16 +73,15 @@ defmodule RoutingExamples.RoutingSlip do
       }
 
       # Broadcast that a new message journey is starting
-      Phoenix.PubSub.broadcast(
-        RoutingExamples.PubSub,
-        "routing_slip:updates",
-        {:message_started, message}
-      )
+      Messenger.broadcast({:message_started, message})
 
-      # Send to first node
-      Node.process_message(first_destination, message)
-
-      {:ok, message_id}
+      # Route to first node
+      case Messenger.route(first_destination, message) do
+        :ok -> {:ok, message_id}
+        {:error, _} = error -> error
+      end
+    else
+      {:error, {:node_not_found, first_destination}}
     end
   end
 
