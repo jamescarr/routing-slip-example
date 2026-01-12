@@ -241,12 +241,14 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
             <rect width="1200" height="600" fill="#0f172a" rx="12"/>
 
             <%!-- Center X position for main flow --%>
-            <% cx = 360 %>
+            <% cx = 500 %>
+            <%!-- Right panel X position (aligned to right edge) --%>
+            <% right_x = 1020 %>
 
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
             <%!-- INTERMEDIATE STORAGE - Right side panel --%>
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
-            <g transform="translate(720, 30)">
+            <g transform={"translate(#{right_x}, 30)"}>
               <%!-- Storage container --%>
               <rect x="0" y="0" width="160" height="200" rx="8" fill="url(#storage-bg)" stroke="#334155" stroke-width="2"/>
 
@@ -339,7 +341,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
             <%!-- CONTEXT BOUNDARY - Bottom right panel (Postmaster Gateway) --%>
             <%!-- ═══════════════════════════════════════════════════════════════ --%>
-            <g transform="translate(720, 440)">
+            <g transform={"translate(#{right_x}, 440)"}>
               <%!-- Boundary container --%>
               <rect x="0" y="0" width="160" height="140" rx="6" fill="#1e293b" stroke="#334155" stroke-width="1" opacity="0.9"/>
               <text x="80" y="18" text-anchor="middle" fill="#ec4899" font-size="9" font-weight="600">
@@ -436,7 +438,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
 
                 <%!-- STEP 4: PM stores data in Intermediate Storage --%>
                 <path
-                  d={"M #{cx + 38} 50 Q #{cx + 180} 50, 720 #{80 + idx * 12}"}
+                  d={"M #{cx + 38} 50 Q #{cx + 180} 50, #{right_x} #{80 + idx * 12}"}
                   fill="none"
                   stroke="#a78bfa"
                   stroke-width="1"
@@ -449,7 +451,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
                     dur={"#{1.0 + idx * 0.15}s"}
                     repeatCount="indefinite"
                     begin={"#{1.5 + idx * 0.2}s"}
-                    path={"M #{cx + 38} 50 Q #{cx + 180} 50, 720 #{80 + idx * 12}"}
+                    path={"M #{cx + 38} 50 Q #{cx + 180} 50, #{right_x} #{80 + idx * 12}"}
                   />
                 </circle>
               <% end %>
@@ -611,7 +613,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
             <%= if step_status(:notifying, @current_step, @all_steps) in [:active, :completed] do %>
               <%!-- Notify to Postmaster gateway path --%>
               <path
-                d={"M #{cx + 108} 400 Q #{cx + 250} 420, 720 475"}
+                d={"M #{cx + 108} 400 Q #{cx + 250} 420, #{right_x} 475"}
                 fill="none"
                 stroke="#ec4899"
                 stroke-width="1.5"
@@ -623,12 +625,12 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
                 <animateMotion
                   dur="1.8s"
                   repeatCount="indefinite"
-                  path={"M #{cx + 108} 400 Q #{cx + 250} 420, 720 475"}
+                  path={"M #{cx + 108} 400 Q #{cx + 250} 420, #{right_x} 475"}
                 />
               </circle>
               <%!-- Delivery confirmation from Postmaster --%>
               <path
-                d={"M 720 495 Q #{cx + 300} 440, #{cx + 90} 415"}
+                d={"M #{right_x} 495 Q #{cx + 300} 440, #{cx + 90} 415"}
                 fill="none"
                 stroke="#a855f7"
                 stroke-width="1"
@@ -640,7 +642,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
                   dur="1.3s"
                   repeatCount="indefinite"
                   begin="0.6s"
-                  path={"M 720 495 Q #{cx + 300} 440, #{cx + 90} 415"}
+                  path={"M #{right_x} 495 Q #{cx + 300} 440, #{cx + 90} 415"}
                 />
               </circle>
             <% end %>
@@ -722,7 +724,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
 
                   <%!-- STEP 4: PM updates Storage with deletion status --%>
                   <path
-                    d={"M #{cx + 38} 50 Q #{cx + 180} 80, 720 #{160 + idx * 8}"}
+                    d={"M #{cx + 38} 50 Q #{cx + 180} 80, #{right_x} #{160 + idx * 8}"}
                     fill="none"
                     stroke="#a78bfa"
                     stroke-width="1"
@@ -734,7 +736,7 @@ defmodule RoutingExamplesWeb.ProcessManagerLive do
                       dur={"#{0.8 + idx * 0.1}s"}
                       repeatCount="indefinite"
                       begin={"#{1.8 + idx * 0.15}s"}
-                      path={"M #{cx + 38} 50 Q #{cx + 180} 80, 720 #{160 + idx * 8}"}
+                      path={"M #{cx + 38} 50 Q #{cx + 180} 80, #{right_x} #{160 + idx * 8}"}
                     />
                   </circle>
                 <% end %>
